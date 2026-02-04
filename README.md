@@ -15,7 +15,6 @@ A professional, modern, and feature-rich Roblox GUI library inspired by Rayfield
 
 ## Installation
 
-```lua
     ███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗    ██╗   ██╗██╗
     ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝    ██║   ██║██║
     ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗    ██║   ██║██║
