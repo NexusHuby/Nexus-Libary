@@ -1,8 +1,5 @@
---[[
-    Modern UI Library
-    A professional Roblox GUI library inspired by Rayfield
-    Features: Auto-save, Lucide icons, smooth animations, modern design
-]]
+-- Nexus UI Library Loader
+-- Replace YOUR_USERNAME with your actual GitHub username
 
 local Library = {
     Version = "1.0.0",
@@ -23,16 +20,16 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
--- Load Modules
-local Config = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Config.lua"))()
-local Theme = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Utils/Theme.lua"))()
-local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Utils/SaveManager.lua"))()
-local LucideIcons = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Utils/LucideIcons.lua"))()
-local TweenModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Utils/Tween.lua"))()
+-- Load Modules (Update these URLs to your repo)
+local Config = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Config.lua"))()
+local Theme = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Utils/Theme.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Utils/SaveManager.lua"))()
+local LucideIcons = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Utils/LucideIcons.lua"))()
+local TweenModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Utils/Tween.lua"))()
 
 -- Component Loaders
-local WindowModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Components/Window.lua"))()
-local NotificationModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Components/Notification.lua"))()
+local WindowModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Components/Window.lua"))()
+local NotificationModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Components/Notification.lua"))()
 
 -- Initialize Library
 Library.Theme = Theme
