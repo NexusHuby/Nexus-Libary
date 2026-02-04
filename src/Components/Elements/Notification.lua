@@ -1,8 +1,8 @@
 local NotificationModule = {}
 NotificationModule.__index = NotificationModule
 
-local Tween = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Utils/Tween.lua"))()
-local LucideIcons = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Utils/LucideIcons.lua"))()
+local Tween = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Utils/Tween.lua"))()
+local LucideIcons = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Utils/LucideIcons.lua"))()
 
 local Notifications = {}
 local NotificationGui = nil
