@@ -1,7 +1,7 @@
 local DividerElement = {}
 DividerElement.__index = DividerElement
 
-local Theme = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Utils/Theme.lua"))()
+local Theme = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Utils/Theme.lua"))()
 
 function DividerElement:Create(Section)
     local self = setmetatable({}, DividerElement)
