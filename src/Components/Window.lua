@@ -5,10 +5,10 @@ local Window = {}
 Window.__index = Window
 
 -- Load dependencies
-local Theme = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Utils/Theme.lua"))()
-local Tween = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Utils/Tween.lua"))()
-local LucideIcons = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Utils/LucideIcons.lua"))()
-local TabModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Components/Tab.lua"))()
+local Theme = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Utils/Theme.lua"))()
+local Tween = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Utils/Tween.lua"))()
+local LucideIcons = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Utils/LucideIcons.lua"))()
+local TabModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Components/Tab.lua"))()
 
 function Window:Create(ConfigData, Library)
     local self = setmetatable({}, Window)
