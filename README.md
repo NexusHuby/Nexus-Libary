@@ -16,4 +16,4 @@ A professional, modern, and feature-rich Roblox GUI library inspired by Rayfield
 ## Installation
 
 ```lua
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/src/Main.lua"))()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Main.lua"))()
