@@ -5,13 +5,13 @@ local Theme = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_RE
 local Tween = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Utils/Tween.lua"))()
 
 -- Element Modules
-local ButtonModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Components/Elements/Button.lua"))()
-local ToggleModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Components/Elements/Toggle.lua"))()
-local SliderModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Components/Elements/Slider.lua"))()
-local DropdownModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Components/Elements/Dropdown.lua"))()
-local ColorPickerModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Components/Elements/ColorPicker.lua"))()
-local InputModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Components/Elements/Input.lua"))()
-local DividerModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_REPO/main/src/Components/Elements/Divider.lua"))()
+local ButtonModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Components/Elements/Button.lua"))()
+local ToggleModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Components/Elements/Toggle.lua"))()
+local SliderModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Components/Elements/Slider.lua"))()
+local DropdownModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Components/Elements/Dropdown.lua"))()
+local ColorPickerModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Components/Elements/ColorPicker.lua"))()
+local InputModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Components/Elements/Input.lua"))()
+local DividerModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/src/Components/Elements/Divider.lua"))()
 
 function Section:Create(Tab, Title, Description)
     local self = setmetatable({}, Section)
