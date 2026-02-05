@@ -1,8 +1,8 @@
 --[[
-    NEXUS STANDALONE v10
-    - Top-Bar Controls (Minimize & Close)
-    - Floating Image Toggle (ID: 92090613790936)
-    - Enhanced Glassmorphism & Lucide Icons
+    NEXUS STANDALONE v11
+    - Conditional Dragging: Toggle button is only draggable when Main is hidden.
+    - Header Divider: Stylish line separating Title from Controls.
+    - Polish: Gradient accents and improved spacing.
 ]]
 
 local Players = game:GetService("Players")
@@ -12,134 +12,132 @@ local CoreGui = game:GetService("CoreGui")
 
 local Player = Players.LocalPlayer
 
---// Configuration
 local CONFIG = {
     Name = "NEXUS HUB",
-    Key = "NEXUS-2026",
-    KeyLink = "https://discord.gg/nexus",
-    SavePath = "Nexus_SaveData.json",
     Accent = Color3.fromRGB(0, 140, 255),
     BG = Color3.fromRGB(10, 10, 10),
     SidebarColor = Color3.fromRGB(15, 15, 15),
-    Secondary = Color3.fromRGB(30, 30, 30),
     MainTransparency = 0.08,
-    ToggleImage = "rbxassetid://92090613790936",
-    Text = Color3.fromRGB(255, 255, 255),
-    DarkText = Color3.fromRGB(170, 170, 170)
+    ToggleImage = "rbxassetid://92090613790936"
 }
 
---// Utility
-local function Create(class, props)
-    local inst = Instance.new(class)
-    for k, v in pairs(props) do inst[k] = v end
-    return inst
-end
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Nexus_v11"
+ScreenGui.Parent = (gethui and gethui()) or CoreGui
+ScreenGui.ResetOnSpawn = false
 
-local function Tween(obj, props, t)
-    local info = TweenInfo.new(t or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    TS:Create(obj, info, props):Play()
-end
-
---// UI Container
-local ScreenGui = Create("ScreenGui", {
-    Name = "Nexus_Interface",
-    Parent = (gethui and gethui()) or CoreGui,
-    ResetOnSpawn = false
-})
-
---// FLOATING TOGGLE BUTTON
-local ToggleButton = Create("ImageButton", {
-    Parent = ScreenGui, Size = UDim2.new(0, 50, 0, 50),
-    Position = UDim2.new(0.05, 0, 0.5, -25), BackgroundColor3 = CONFIG.BG,
-    Image = CONFIG.ToggleImage, Visible = false, BackgroundTransparency = 0.2,
-    ZIndex = 100
-})
-Create("UICorner", {Parent = ToggleButton, CornerRadius = UDim.new(1, 0)})
-Create("UIStroke", {Parent = ToggleButton, Color = CONFIG.Accent, Thickness = 2})
-
---// NOTIFICATION SYSTEM
-local NotifyHolder = Create("Frame", {
-    Parent = ScreenGui, Size = UDim2.new(0, 250, 1, 0),
-    Position = UDim2.new(1, -260, 0, 0), BackgroundTransparency = 1
-})
-Create("UIListLayout", {Parent = NotifyHolder, VerticalAlignment = Enum.VerticalAlignment.Bottom, Padding = UDim.new(0, 10)})
-
-local function Notify(title, desc)
-    local Box = Create("Frame", {Parent = NotifyHolder, Size = UDim2.new(1, 0, 0, 0), BackgroundColor3 = CONFIG.BG, BackgroundTransparency = 0.1, ClipsDescendants = true})
-    Create("UICorner", {Parent = Box, CornerRadius = UDim.new(0, 8)})
-    Create("UIStroke", {Parent = Box, Color = CONFIG.Accent, Thickness = 1.2})
-    Create("TextLabel", {Parent = Box, Text = title, Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = CONFIG.Text, Position = UDim2.new(0, 12, 0, 8), BackgroundTransparency = 1})
-    Create("TextLabel", {Parent = Box, Text = desc, Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = CONFIG.DarkText, Position = UDim2.new(0, 12, 0, 24), Size = UDim2.new(1, -20, 0, 30), BackgroundTransparency = 1, TextWrapped = true, TextXAlignment = 0})
-    Tween(Box, {Size = UDim2.new(1, 0, 0, 65)})
-    task.delay(5, function() Tween(Box, {Size = UDim2.new(1, 0, 0, 0)}) task.wait(0.3) Box:Destroy() end)
-end
-
---// MAIN HUB SETUP
-local function OpenMainHub()
-    local Main = Create("Frame", {
-        Name = "MainHub", Parent = ScreenGui, BackgroundColor3 = CONFIG.BG,
-        BackgroundTransparency = CONFIG.MainTransparency, Size = UDim2.new(0, 600, 0, 400),
-        Position = UDim2.new(0.5, -300, 0.5, -200), ClipsDescendants = true
-    })
-    Create("UICorner", {Parent = Main, CornerRadius = UDim.new(0, 10)})
-    Create("UIStroke", {Parent = Main, Color = Color3.fromRGB(60, 60, 60), Thickness = 1.2})
-    
-    -- TOP BAR BUTTONS (Minimize & Close)
-    local Controls = Create("Frame", {
-        Parent = Main, Size = UDim2.new(0, 70, 0, 30), 
-        Position = UDim2.new(1, -75, 0, 5), BackgroundTransparency = 1, ZIndex = 10
-    })
-    
-    local CloseBtn = Create("TextButton", {
-        Parent = Controls, Text = "X", Font = Enum.Font.GothamBold, TextSize = 14,
-        TextColor3 = Color3.fromRGB(255, 80, 80), BackgroundTransparency = 1,
-        Size = UDim2.new(0, 30, 1, 0), Position = UDim2.new(0.5, 0, 0, 0)
-    })
-
-    local MinBtn = Create("TextButton", {
-        Parent = Controls, Text = "-", Font = Enum.Font.GothamBold, TextSize = 20,
-        TextColor3 = CONFIG.Text, BackgroundTransparency = 1,
-        Size = UDim2.new(0, 30, 1, 0), Position = UDim2.new(0, 0, 0, 0)
-    })
-
-    -- Logic for Buttons
-    local function ToggleUI(state)
-        if state == false then
-            Tween(Main, {Size = UDim2.new(0,0,0,0), BackgroundTransparency = 1}, 0.3)
-            task.wait(0.3)
-            Main.Visible = false
-            ToggleButton.Visible = true
-            Tween(ToggleButton, {ImageTransparency = 0, BackgroundTransparency = 0.2})
-        else
-            Main.Visible = true
-            ToggleButton.Visible = false
-            Tween(Main, {Size = UDim2.new(0, 600, 0, 400), BackgroundTransparency = CONFIG.MainTransparency}, 0.3)
+--// UTILITY: Dragging Function
+local function EnableDrag(frame)
+    local dragging, dragInput, dragStart, startPos
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true; dragStart = input.Position; startPos = frame.Position
         end
-    end
-
-    MinBtn.MouseButton1Click:Connect(function() ToggleUI(false) end)
-    CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
-    ToggleButton.MouseButton1Click:Connect(function() ToggleUI(true) end)
-
-    -- SIDEBAR & CONTENT (Standard v9 Logic)
-    local Sidebar = Create("Frame", {Parent = Main, BackgroundColor3 = CONFIG.SidebarColor, BackgroundTransparency = 0.1, Size = UDim2.new(0, 170, 1, 0)})
-    Create("UICorner", {Parent = Sidebar, CornerRadius = UDim.new(0, 10)})
-    
-    local Title = Create("TextLabel", {Parent = Sidebar, Text = CONFIG.Name, Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = CONFIG.Accent, BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 20), Size = UDim2.new(1, 0, 0, 30)})
-
-    -- [Rest of the Sidebar / Tab Logic from v9 goes here]
-
-    -- Final Setup
-    local function MakeDraggable(frame)
-        local drag, dragInput, dragStart, startPos
-        frame.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then drag = true; dragStart = input.Position; startPos = frame.Position end end)
-        UIS.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement and drag then local delta = input.Position - dragStart; frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y) end end)
-        UIS.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end end)
-    end
-    
-    MakeDraggable(Main)
-    Notify("Nexus Hub Officially Loaded", "Nexus is ready. Press '-' to minimize.")
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
 end
 
--- Start
-OpenMainHub()
+--// TOGGLE BUTTON (Draggable)
+local ToggleBtn = Instance.new("ImageButton")
+ToggleBtn.Name = "NexusToggle"
+ToggleBtn.Parent = ScreenGui
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Position = UDim2.new(0, 20, 0.5, -25)
+ToggleBtn.Image = CONFIG.ToggleImage
+ToggleBtn.BackgroundColor3 = CONFIG.BG
+ToggleBtn.Visible = false
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+local ToggleStroke = Instance.new("UIStroke", ToggleBtn)
+ToggleStroke.Color = CONFIG.Accent
+ToggleStroke.Thickness = 2
+
+EnableDrag(ToggleBtn) -- Enabled as requested
+
+--// MAIN HUB
+local function BuildMain()
+    local Main = Instance.new("Frame")
+    Main.Name = "MainHub"
+    Main.Parent = ScreenGui
+    Main.BackgroundColor3 = CONFIG.BG
+    Main.BackgroundTransparency = CONFIG.MainTransparency
+    Main.Size = UDim2.new(0, 600, 0, 400)
+    Main.Position = UDim2.new(0.5, -300, 0.5, -200)
+    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
+    
+    local MainStroke = Instance.new("UIStroke", Main)
+    MainStroke.Color = Color3.fromRGB(60, 60, 60)
+    MainStroke.Thickness = 1.2
+
+    -- HEADER DIVIDER
+    local HeaderLine = Instance.new("Frame")
+    HeaderLine.Name = "HeaderDivider"
+    HeaderLine.Parent = Main
+    HeaderLine.Size = UDim2.new(1, -20, 0, 1)
+    HeaderLine.Position = UDim2.new(0, 10, 0, 40)
+    HeaderLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    
+    local Gradient = Instance.new("UIGradient", HeaderLine)
+    Gradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.5, 0.5),
+        NumberSequenceKeypoint.new(1, 1)
+    })
+
+    -- TITLE
+    local Title = Instance.new("TextLabel")
+    Title.Parent = Main
+    Title.Text = CONFIG.Name
+    Title.Font = Enum.Font.GothamBold
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.TextSize = 14
+    Title.BackgroundTransparency = 1
+    Title.Position = UDim2.new(0, 15, 0, 10)
+    Title.Size = UDim2.new(0, 200, 0, 20)
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+
+    -- CONTROLS
+    local Close = Instance.new("TextButton")
+    Close.Parent = Main
+    Close.Text = "X"
+    Close.Size = UDim2.new(0, 30, 0, 30)
+    Close.Position = UDim2.new(1, -35, 0, 5)
+    Close.BackgroundTransparency = 1
+    Close.TextColor3 = Color3.fromRGB(255, 80, 80)
+    Close.Font = Enum.Font.GothamBold
+
+    local Min = Instance.new("TextButton")
+    Min.Parent = Main
+    Min.Text = "-"
+    Min.Size = UDim2.new(0, 30, 0, 30)
+    Min.Position = UDim2.new(1, -65, 0, 5)
+    Min.BackgroundTransparency = 1
+    Min.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Min.Font = Enum.Font.GothamBold
+
+    -- LOGIC
+    Min.MouseButton1Click:Connect(function()
+        Main.Visible = false
+        ToggleBtn.Visible = true
+    end)
+
+    Close.MouseButton1Click:Connect(function()
+        ScreenGui:Destroy()
+    end)
+
+    ToggleBtn.MouseButton1Click:Connect(function()
+        Main.Visible = true
+        ToggleBtn.Visible = false
+    end)
+
+    EnableDrag(Main)
+end
+
+BuildMain()
