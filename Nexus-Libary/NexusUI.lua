@@ -291,8 +291,6 @@ local function CreateTab(Name)
     local NormalProps = {BackgroundTransparency = 0.08}
     local HoverProps = {BackgroundTransparency = 0.25}
     local ActiveProps = {BackgroundTransparency = 0.15}
-    TabGloss.NormalTrans = 0.8
-    TabGloss.ActiveTrans = 0.5
 
     ApplyHoverTween(TabButton, NormalProps, HoverProps)
 
@@ -317,7 +315,7 @@ local function CreateTab(Name)
         if CurrentTabButton == TabButton then return end
 
         if CurrentTabButton then
-            TweenService:Create(CurrentTabButton, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundTransparency = 0.08}):Play()
+            TweenService:Create(CurrentTabButton, TweenInfo.new(0.25, Enum.EasingStyle.Quad), NormalProps):Play()
             local oldGloss = CurrentTabButton:FindFirstChild("Frame")
             if oldGloss then
                 TweenService:Create(oldGloss, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundTransparency = 0.8}):Play()
@@ -326,7 +324,7 @@ local function CreateTab(Name)
         end
 
         TweenService:Create(TabButton, TweenInfo.new(0.25, Enum.EasingStyle.Quad), ActiveProps):Play()
-        TweenService:Create(TabGloss, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundTransparency = TabGloss.ActiveTrans}):Play()
+        TweenService:Create(TabGloss, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundTransparency = 0.5}):Play()
         ContentFrames[Name].Visible = true
         CurrentTabButton = TabButton
     end)
@@ -338,19 +336,16 @@ for _, TabName in ipairs(Tabs) do
     CreateTab(TabName)
 end
 
--- Default to Home
-if #Sidebar:GetChildren() > 0 then
-    local homeButton = nil
+-- Default to Home tab
+task.spawn(function()
+    task.wait() -- Wait one frame for layout to settle
     for _, child in ipairs(Sidebar:GetChildren()) do
         if child:IsA("TextButton") and child.Text == "Home" then
-            homeButton = child
+            child.MouseButton1Click:Fire()
             break
         end
     end
-    if homeButton then
-        homeButton.MouseButton1Click:Fire()
-    end
-end
+end)
 
 -- Toggle Button (Minimized State)
 local ToggleButton = Instance.new("ImageButton")
@@ -380,7 +375,7 @@ ToggleLabel.Parent = ToggleButton
 
 -- Dragging Setup
 MakeDraggable(MainFrame, Header)
-MakeDraggable(ToggleButton, ToggleButton)
+MakeDraggable(ToggleButton)
 
 -- Minimize / Restore Logic
 MinimizeButton.MouseButton1Click:Connect(function()
@@ -417,9 +412,9 @@ end)
 
 -- Authentication Logic
 VerifyButton.MouseButton1Click:Connect(function()
-    local enteredKey = KeyBox.Text
+    local enteredKey = KeyBox.Text:lower() -- Optional: make case-insensitive
 
-    if enteredKey == "NEXUS" then  -- Change this to your actual key
+    if enteredKey == "nexus" then  -- Change this to your actual key
         StatusLabel.Text = "Access Granted"
         StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
 
