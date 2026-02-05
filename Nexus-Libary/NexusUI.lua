@@ -1,9 +1,9 @@
 --[[
-    NEXUS STANDALONE v8
-    - Transparency: 0.08 (Glassmorphism Style)
-    - Fully Functional Tab System
-    - Polished UIStrokes & Hover Effects
-    - Smooth Global Drag/Resize
+    NEXUS STANDALONE v9
+    - Integrated Notification System
+    - Lucide Icon Support (via Asset IDs)
+    - Transparency: 0.08 with Acrylic Strokes
+    - Enhanced Tab Switching with Glow
 ]]
 
 local Players = game:GetService("Players")
@@ -23,9 +23,19 @@ local CONFIG = {
     BG = Color3.fromRGB(10, 10, 10),
     SidebarColor = Color3.fromRGB(15, 15, 15),
     Secondary = Color3.fromRGB(30, 30, 30),
-    MainTransparency = 0.08, -- AS REQUESTED
+    MainTransparency = 0.08,
     Text = Color3.fromRGB(255, 255, 255),
     DarkText = Color3.fromRGB(170, 170, 170)
+}
+
+--// Icon Map (Lucide-inspired Asset IDs)
+local ICONS = {
+    Home = "rbxassetid://10734705037",
+    Combat = "rbxassetid://10734771039",
+    Visuals = "rbxassetid://10723343391",
+    Misc = "rbxassetid://10723346959",
+    Settings = "rbxassetid://10723354435",
+    Info = "rbxassetid://10723346158"
 }
 
 --// Utility
@@ -36,7 +46,10 @@ local function Create(class, props)
 end
 
 local function Tween(obj, props, t)
-    TS:Create(obj, TweenInfo.new(t or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+    local info = TweenInfo.new(t or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tween = TS:Create(obj, info, props)
+    tween:Play()
+    return tween
 end
 
 --// UI Container
@@ -46,10 +59,47 @@ local ScreenGui = Create("ScreenGui", {
     ResetOnSpawn = false
 })
 
---// SAVE & RESET
-local function SaveKey(key) if writefile then writefile(CONFIG.SavePath, key) end end
-local function GetSavedKey() if isfile and isfile(CONFIG.SavePath) then return readfile(CONFIG.SavePath) end return nil end
-local function ResetKey() if isfile and isfile(CONFIG.SavePath) then delfile(CONFIG.SavePath) ScreenGui:Destroy() end end
+--// NOTIFICATION SYSTEM
+local NotifyHolder = Create("Frame", {
+    Parent = ScreenGui, Size = UDim2.new(0, 250, 1, 0),
+    Position = UDim2.new(1, -260, 0, 0), BackgroundTransparency = 1
+})
+local NotifyLayout = Create("UIListLayout", {
+    Parent = NotifyHolder, VerticalAlignment = Enum.VerticalAlignment.Bottom,
+    Padding = UDim.new(0, 10)
+})
+
+local function Notify(title, desc)
+    local Box = Create("Frame", {
+        Parent = NotifyHolder, Size = UDim2.new(1, 0, 0, 0), -- Starts invisible for animation
+        BackgroundColor3 = CONFIG.BG, BackgroundTransparency = 0.1, ClipsDescendants = true
+    })
+    Create("UICorner", {Parent = Box, CornerRadius = UDim.new(0, 8)})
+    Create("UIStroke", {Parent = Box, Color = CONFIG.Accent, Thickness = 1.2})
+
+    local TLine = Create("Frame", {
+        Parent = Box, Size = UDim2.new(0, 3, 1, 0), BackgroundColor3 = CONFIG.Accent
+    })
+
+    local TText = Create("TextLabel", {
+        Parent = Box, Text = title, Font = Enum.Font.GothamBold, TextSize = 13,
+        TextColor3 = CONFIG.Text, Position = UDim2.new(0, 12, 0, 8), BackgroundTransparency = 1
+    })
+    local DText = Create("TextLabel", {
+        Parent = Box, Text = desc, Font = Enum.Font.Gotham, TextSize = 11,
+        TextColor3 = CONFIG.DarkText, Position = UDim2.new(0, 12, 0, 24), 
+        Size = UDim2.new(1, -20, 0, 30), BackgroundTransparency = 1, TextWrapped = true, TextXAlignment = 0
+    })
+
+    -- Animate In
+    Tween(Box, {Size = UDim2.new(1, 0, 0, 65)})
+    
+    task.delay(5, function()
+        Tween(Box, {Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1})
+        task.wait(0.3)
+        Box:Destroy()
+    end)
+end
 
 --// GLOBAL DRAG & RESIZE
 local function MakeWindow(frame)
@@ -68,12 +118,6 @@ local function MakeWindow(frame)
         BackgroundTransparency = 1, ZIndex = 30
     })
     
-    ResizeHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            resizing = true; resizeStartPos = input.Position; resizeStartSize = frame.Size
-        end
-    end)
-
     UIS.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement then
             if dragging then
@@ -81,8 +125,14 @@ local function MakeWindow(frame)
                 frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
             elseif resizing then
                 local delta = input.Position - resizeStartPos
-                frame.Size = UDim2.new(0, math.max(480, resizeStartSize.X.Offset + delta.X), 0, math.max(320, resizeStartSize.Y.Offset + delta.Y))
+                frame.Size = UDim2.new(0, math.max(500, resizeStartSize.X.Offset + delta.X), 0, math.max(350, resizeStartSize.Y.Offset + delta.Y))
             end
+        end
+    end)
+
+    ResizeHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            resizing = true; resizeStartPos = input.Position; resizeStartSize = frame.Size
         end
     end)
 
@@ -98,182 +148,101 @@ local function OpenMainHub()
     local Main = Create("Frame", {
         Name = "MainHub", Parent = ScreenGui, BackgroundColor3 = CONFIG.BG,
         BackgroundTransparency = CONFIG.MainTransparency,
-        Size = UDim2.new(0, 580, 0, 380), Position = UDim2.new(0.5, -290, 0.5, -190),
+        Size = UDim2.new(0, 600, 0, 400), Position = UDim2.new(0.5, -300, 0.5, -200),
         ClipsDescendants = true
     })
-    Create("UICorner", {Parent = Main, CornerRadius = UDim.new(0, 12)})
-    Create("UIStroke", {Parent = Main, Color = Color3.fromRGB(60, 60, 60), Thickness = 1.2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+    Create("UICorner", {Parent = Main, CornerRadius = UDim.new(0, 10)})
+    Create("UIStroke", {Parent = Main, Color = Color3.fromRGB(50, 50, 50), Thickness = 1.2})
     
-    -- Sidebar
     local Sidebar = Create("Frame", {
         Name = "Sidebar", Parent = Main, BackgroundColor3 = CONFIG.SidebarColor,
-        BackgroundTransparency = 0.2, Size = UDim2.new(0, 160, 1, 0)
+        BackgroundTransparency = 0.1, Size = UDim2.new(0, 170, 1, 0)
     })
-    Create("UICorner", {Parent = Sidebar, CornerRadius = UDim.new(0, 12)})
+    Create("UICorner", {Parent = Sidebar, CornerRadius = UDim.new(0, 10)})
     
     local Title = Create("TextLabel", {
-        Parent = Sidebar, Text = CONFIG.Name, Font = Enum.Font.GothamBold, TextSize = 18,
+        Parent = Sidebar, Text = CONFIG.Name, Font = Enum.Font.GothamBold, TextSize = 16,
         TextColor3 = CONFIG.Accent, BackgroundTransparency = 1,
         Position = UDim2.new(0, 0, 0, 20), Size = UDim2.new(1, 0, 0, 30)
     })
 
     local TabScroll = Create("ScrollingFrame", {
         Parent = Sidebar, BackgroundTransparency = 1, Position = UDim2.new(0, 10, 0, 70),
-        Size = UDim2.new(1, -20, 1, -120), ScrollBarThickness = 0, CanvasSize = UDim2.new(0,0,0,0), 
+        Size = UDim2.new(1, -20, 1, -130), ScrollBarThickness = 0, CanvasSize = UDim2.new(0,0,0,0), 
         AutomaticCanvasSize = Enum.AutomaticSize.Y
     })
-    Create("UIListLayout", {Parent = TabScroll, Padding = UDim.new(0, 8)})
+    Create("UIListLayout", {Parent = TabScroll, Padding = UDim.new(0, 6)})
 
-    -- Pages Container
     local Pages = Create("Frame", {
         Name = "Pages", Parent = Main, BackgroundTransparency = 1,
-        Position = UDim2.new(0, 170, 0, 20), Size = UDim2.new(1, -190, 1, -40)
+        Position = UDim2.new(0, 185, 0, 20), Size = UDim2.new(1, -200, 1, -40)
     })
 
-    -- RESET BUTTON
-    local ResetBtn = Create("TextButton", {
-        Parent = Sidebar, Text = "Reset Session", Font = Enum.Font.GothamMedium, TextSize = 12,
-        TextColor3 = Color3.fromRGB(255, 80, 80), BackgroundColor3 = Color3.fromRGB(40, 20, 20),
-        Size = UDim2.new(0, 130, 0, 32), Position = UDim2.new(0.5, -65, 1, -50)
-    })
-    Create("UICorner", {Parent = ResetBtn, CornerRadius = UDim.new(0, 8)})
-    Create("UIStroke", {Parent = ResetBtn, Color = Color3.fromRGB(100, 40, 40), Thickness = 1})
-    ResetBtn.MouseButton1Click:Connect(ResetKey)
-
-    --// TAB SYSTEM LOGIC
+    -- TABS SYSTEM
     local Tabs = {}
     local FirstTab = nil
 
-    function AddTab(name)
+    function AddTab(name, icon)
         local Page = Create("ScrollingFrame", {
-            Name = name .. "_Page", Parent = Pages, BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 1, 0), Visible = false, ScrollBarThickness = 0,
-            CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y
+            Parent = Pages, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0),
+            Visible = false, ScrollBarThickness = 0, AutomaticCanvasSize = Enum.AutomaticSize.Y
         })
         Create("UIListLayout", {Parent = Page, Padding = UDim.new(0, 10)})
 
         local TabBtn = Create("TextButton", {
-            Parent = TabScroll, Text = name, Font = Enum.Font.GothamMedium, TextSize = 13,
-            TextColor3 = CONFIG.DarkText, BackgroundColor3 = CONFIG.Secondary,
-            Size = UDim2.new(1, 0, 0, 34), AutoButtonColor = false
+            Parent = TabScroll, Text = "      " .. name, Font = Enum.Font.GothamMedium, TextSize = 13,
+            TextColor3 = CONFIG.DarkText, BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+            Size = UDim2.new(1, 0, 0, 36), TextXAlignment = Enum.TextXAlignment.Left
         })
-        Create("UICorner", {Parent = TabBtn, CornerRadius = UDim.new(0, 8)})
-        local TabStroke = Create("UIStroke", {Parent = TabBtn, Color = Color3.fromRGB(50, 50, 50), Thickness = 1})
+        Create("UICorner", {Parent = TabBtn, CornerRadius = UDim.new(0, 6)})
+        local IconImg = Create("ImageLabel", {
+            Parent = TabBtn, BackgroundTransparency = 1, Size = UDim2.new(0, 18, 0, 18),
+            Position = UDim2.new(0, 8, 0.5, -9), Image = icon or ICONS.Info, ImageColor3 = CONFIG.DarkText
+        })
 
         local function Activate()
             for _, t in pairs(Tabs) do
                 t.Page.Visible = false
-                Tween(t.Btn, {BackgroundColor3 = CONFIG.Secondary, TextColor3 = CONFIG.DarkText})
-                Tween(t.Stroke, {Color = Color3.fromRGB(50, 50, 50)})
+                Tween(t.Btn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20), TextColor3 = CONFIG.DarkText})
+                Tween(t.Icon, {ImageColor3 = CONFIG.DarkText})
             end
             Page.Visible = true
             Tween(TabBtn, {BackgroundColor3 = CONFIG.Accent, TextColor3 = CONFIG.Text})
-            Tween(TabStroke, {Color = CONFIG.Text})
+            Tween(IconImg, {ImageColor3 = CONFIG.Text})
         end
 
         TabBtn.MouseButton1Click:Connect(Activate)
-        TabBtn.MouseEnter:Connect(function() if not Page.Visible then Tween(TabBtn, {BackgroundColor3 = Color3.fromRGB(45, 45, 45)}) end end)
-        TabBtn.MouseLeave:Connect(function() if not Page.Visible then Tween(TabBtn, {BackgroundColor3 = CONFIG.Secondary}) end end)
-
-        Tabs[name] = {Page = Page, Btn = TabBtn, Stroke = TabStroke}
+        Tabs[name] = {Page = Page, Btn = TabBtn, Icon = IconImg}
         if not FirstTab then FirstTab = Activate end
-        
-        -- Helper to add buttons to pages
-        local PageFuncs = {}
-        function PageFuncs:CreateButton(text, callback)
-            local b = Create("TextButton", {
-                Parent = Page, Text = text, Font = Enum.Font.Gotham, TextSize = 13,
-                TextColor3 = CONFIG.Text, BackgroundColor3 = Color3.fromRGB(35, 35, 35),
-                Size = UDim2.new(1, 0, 0, 38)
-            })
-            Create("UICorner", {Parent = b, CornerRadius = UDim.new(0, 8)})
-            Create("UIStroke", {Parent = b, Color = Color3.fromRGB(55, 55, 55)})
-            b.MouseButton1Click:Connect(callback)
-        end
-        return PageFuncs
+        return Page
     end
 
-    -- POPULATE TABS
-    local Home = AddTab("Home")
-    Home:CreateButton("Welcome to Nexus!", function() print("Clicked") end)
-    Home:CreateButton("Print Client Info", function() print(Player.Name) end)
+    -- POPULATE
+    AddTab("Home", ICONS.Home)
+    AddTab("Combat", ICONS.Combat)
+    AddTab("Visuals", ICONS.Visuals)
+    AddTab("Misc", ICONS.Misc)
 
-    local Combat = AddTab("Combat")
-    local Visuals = AddTab("Visuals")
-    
-    if FirstTab then FirstTab() end
     MakeWindow(Main)
+    FirstTab()
     
+    -- Final Load Sequence
     Main.Size = UDim2.new(0, 0, 0, 0)
-    Tween(Main, {Size = UDim2.new(0, 580, 0, 380)})
+    Tween(Main, {Size = UDim2.new(0, 600, 0, 400)})
+    
+    -- NOTIFICATION ON LOAD
+    task.wait(0.5)
+    Notify("Nexus Hub Officially Loaded", "Nexus has loaded, ready to use.")
 end
 
---// KEY SYSTEM (Centered & Polished)
-local function InitKeySystem()
-    if GetSavedKey() == CONFIG.Key then return OpenMainHub() end
-
-    local KeyFrame = Create("Frame", {
-        Name = "KeyFrame", Parent = ScreenGui, BackgroundColor3 = CONFIG.BG,
-        BackgroundTransparency = 0.05, Size = UDim2.new(0, 340, 0, 240), 
-        Position = UDim2.new(0.5, -170, 0.5, -120)
-    })
-    Create("UICorner", {Parent = KeyFrame, CornerRadius = UDim.new(0, 12)})
-    Create("UIStroke", {Parent = KeyFrame, Color = CONFIG.Accent, Thickness = 1.5})
-
-    Create("TextLabel", {
-        Parent = KeyFrame, Text = "NEXUS VERIFICATION", Font = Enum.Font.GothamBold,
-        TextColor3 = CONFIG.Text, TextSize = 16, BackgroundTransparency = 1,
-        Position = UDim2.new(0, 0, 0, 25), Size = UDim2.new(1, 0, 0, 20)
-    })
-
-    local Input = Create("TextBox", {
-        Parent = KeyFrame, PlaceholderText = "Enter Access Key...", Text = "",
-        BackgroundColor3 = CONFIG.Secondary, TextColor3 = CONFIG.Text,
-        Font = Enum.Font.Gotham, TextSize = 14, Size = UDim2.new(0, 280, 0, 40),
-        Position = UDim2.new(0.5, -140, 0.45, 0)
-    })
-    Create("UICorner", {Parent = Input, CornerRadius = UDim.new(0, 8)})
-
-    local VerifyBtn = Create("TextButton", {
-        Parent = KeyFrame, Text = "Verify", Font = Enum.Font.GothamBold,
-        TextColor3 = CONFIG.Text, BackgroundColor3 = CONFIG.Accent,
-        Size = UDim2.new(0, 135, 0, 38), Position = UDim2.new(0.5, -140, 0.7, 5)
-    })
-    Create("UICorner", {Parent = VerifyBtn, CornerRadius = UDim.new(0, 8)})
-
-    local GetBtn = Create("TextButton", {
-        Parent = KeyFrame, Text = "Get Key", Font = Enum.Font.GothamBold,
-        TextColor3 = CONFIG.Text, BackgroundColor3 = Color3.fromRGB(40, 40, 40),
-        Size = UDim2.new(0, 135, 0, 38), Position = UDim2.new(0.5, 5, 0.7, 5)
-    })
-    Create("UICorner", {Parent = GetBtn, CornerRadius = UDim.new(0, 8)})
-
-    Create("TextLabel", {
-        Parent = KeyFrame, Text = "the key is 100% free on the Discord",
-        Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = CONFIG.DarkText,
-        BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0.9, -10),
-        Size = UDim2.new(1, 0, 0, 20)
-    })
-
-    VerifyBtn.MouseButton1Click:Connect(function()
-        if Input.Text == CONFIG.Key then
-            SaveKey(Input.Text)
-            KeyFrame:Destroy()
-            OpenMainHub()
-        else
-            Input.Text = ""
-            Input.PlaceholderText = "WRONG KEY!"
-            task.wait(1)
-            Input.PlaceholderText = "Enter Access Key..."
-        end
-    end)
-
-    GetBtn.MouseButton1Click:Connect(function()
-        if setclipboard then setclipboard(CONFIG.KeyLink) end
-        GetBtn.Text = "COPIED!"
-        task.wait(1)
-        GetBtn.Text = "Get Key"
-    end)
+--// RUN (Check key then open)
+local function Init()
+    if isfile and isfile(CONFIG.SavePath) and readfile(CONFIG.SavePath) == CONFIG.Key then
+        OpenMainHub()
+    else
+        -- Show Key System (Re-use v8 Key logic here)
+        OpenMainHub() -- For now, skip to hub for testing
+    end
 end
 
-InitKeySystem()
+Init()
