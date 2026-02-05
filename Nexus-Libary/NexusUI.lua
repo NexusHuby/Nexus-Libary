@@ -1,14 +1,14 @@
-## // Services
+-- Services
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
-## // ScreenGui Setup
+-- ScreenGui Setup
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.DisplayOrder = 999999999
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 
-## // Utility: Draggable Function
+-- Utility: Draggable Function
 local function MakeDraggable(Frame, DragPart)
     DragPart = DragPart or Frame
     local dragging = false
@@ -47,7 +47,7 @@ local function MakeDraggable(Frame, DragPart)
     end)
 end
 
-## // Utility: Button Hover Tween
+-- Utility: Button Hover Tween
 local function ApplyHoverTween(Button, NormalProps, HoverProps)
     local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad)
     local hoverTween
@@ -65,7 +65,7 @@ local function ApplyHoverTween(Button, NormalProps, HoverProps)
     end)
 end
 
-## // Stage One: Authentication Layer
+-- Stage One: Authentication Layer
 local AuthFrame = Instance.new("Frame")
 AuthFrame.Size = UDim2.fromOffset(320, 220)
 AuthFrame.Position = UDim2.new(0.5, -160, 0.5, -110)
@@ -165,7 +165,7 @@ StatusLabel.Parent = AuthFrame
 
 ApplyHoverTween(VerifyButton, {BackgroundTransparency = 0.08}, {BackgroundTransparency = 0.2})
 
-## // Stage Two: Primary Command Hub
+-- Stage Two: Primary Command Hub
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.fromOffset(750, 500)
 MainFrame.Position = UDim2.new(0.5, -375, 0.5, -250)
@@ -261,7 +261,7 @@ ContentArea.Position = UDim2.new(0, 110, 0, 55)
 ContentArea.BackgroundTransparency = 1
 ContentArea.Parent = MainFrame
 
-## // Modular Tab Creation
+-- Modular Tab Creation
 local Tabs = {"Home", "Player", "Combat", "Visuals", "Settings"}
 local ContentFrames = {}
 local CurrentTabButton = nil
@@ -340,10 +340,19 @@ end
 
 -- Default to Home
 if #Sidebar:GetChildren() > 0 then
-    Sidebar:GetChildren()[3].MouseButton1Click:Fire() -- First tab (Home)
+    local homeButton = nil
+    for _, child in ipairs(Sidebar:GetChildren()) do
+        if child:IsA("TextButton") and child.Text == "Home" then
+            homeButton = child
+            break
+        end
+    end
+    if homeButton then
+        homeButton.MouseButton1Click:Fire()
+    end
 end
 
-## // Toggle Button (Minimized State)
+-- Toggle Button (Minimized State)
 local ToggleButton = Instance.new("ImageButton")
 ToggleButton.Size = UDim2.fromOffset(45, 45)
 ToggleButton.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
@@ -369,11 +378,11 @@ ToggleLabel.TextSize = 24
 ToggleLabel.TextColor3 = Color3.fromRGB(0, 140, 255)
 ToggleLabel.Parent = ToggleButton
 
-## // Dragging Setup
+-- Dragging Setup
 MakeDraggable(MainFrame, Header)
 MakeDraggable(ToggleButton, ToggleButton)
 
-## // Minimize / Restore Logic
+-- Minimize / Restore Logic
 MinimizeButton.MouseButton1Click:Connect(function()
     ToggleButton.Position = MainFrame.Position
     MainFrame.Visible = false
@@ -390,7 +399,7 @@ CloseButton.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-## // Force Reset Button
+-- Force Reset Button
 local ResetButton = Instance.new("TextButton")
 ResetButton.Size = UDim2.fromOffset(120, 30)
 ResetButton.Position = UDim2.fromOffset(10, 10)
@@ -406,11 +415,11 @@ ResetButton.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-## // Authentication Logic
+-- Authentication Logic
 VerifyButton.MouseButton1Click:Connect(function()
     local enteredKey = KeyBox.Text
 
-    if enteredKey == "NEXUS" then  -- Change this to your desired key
+    if enteredKey == "NEXUS" then  -- Change this to your actual key
         StatusLabel.Text = "Access Granted"
         StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
 
