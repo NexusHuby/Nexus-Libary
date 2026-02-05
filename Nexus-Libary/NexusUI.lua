@@ -1,643 +1,482 @@
--- Advanced Roblox GUI Script with Key System
--- Features: Key verification, smooth animations, draggable windows, tab system
+-- Polished Roblox GUI with Key System (LocalScript)
+-- Place this in StarterPlayer > StarterPlayerScripts or execute via your executor
+-- Features: Key verification (free key via "Get Key" button), smooth animations, draggable + resizable main GUI,
+-- tab system, minimize with draggable opener button, close confirmation, glowing effects, hover scaling
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Configuration
-local CONFIG = {
-    CorrectKey = "ROBLOX2025", -- Change this to your actual key
-    KeySaveFile = "AdvancedGUI_Key",
-    AnimationSpeed = 0.5,
-    Colors = {
-        Background = Color3.fromRGB(20, 20, 20),
-        Blue = Color3.fromRGB(0, 150, 255),
-        Green = Color3.fromRGB(0, 255, 100),
-        Purple = Color3.fromRGB(150, 0, 255),
-        Red = Color3.fromRGB(255, 50, 50),
-    }
-}
-
--- Create ScreenGui
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AdvancedGUI"
+screenGui.Name = "PolishedGUI"
 screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = playerGui
 
--- Utility Functions
-local function createStroke(parent, color, thickness)
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = color
-    stroke.Thickness = thickness or 2
-    stroke.Parent = parent
-    return stroke
+local correctKey = "grok"  -- The "free" key (case-sensitive)
+
+-- Check if already verified this session
+if player:FindFirstChild("KeyVerified") then
+    CreateMainGUI()
+else
+    CreateKeyGUI()
 end
 
-local function createCorner(parent, radius)
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radius or 8)
-    corner.Parent = parent
-    return corner
-end
+-- Reusable button creator with hover effect
+local function CreateButton(parent, text, position, outlineColor)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.35, 0, 0, 50)
+    btn.Position = position
+    btn.BackgroundColor3 = Color3.new(0, 0, 0)
+    btn.Text = text
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 20
+    btn.Parent = parent
 
-local function tweenObject(object, properties, duration, style, direction)
-    local tweenInfo = TweenInfo.new(
-        duration or CONFIG.AnimationSpeed,
-        style or Enum.EasingStyle.Quad,
-        direction or Enum.EasingDirection.Out
-    )
-    local tween = TweenService:Create(object, tweenInfo, properties)
-    tween:Play()
-    return tween
-end
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
 
-local function makeDraggable(frame, dragHandle)
-    local dragging = false
-    local dragInput, mousePos, framePos
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Color = outlineColor
+    stroke.Thickness = 3
 
-    dragHandle = dragHandle or frame
+    local scale = Instance.new("UIScale", btn)
+    scale.Scale = 1
 
-    dragHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            mousePos = input.Position
-            framePos = frame.Position
-
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(scale, TweenInfo.new(0.2), {Scale = 1.1}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(scale, TweenInfo.new(0.2), {Scale = 1}):Play()
     end)
 
-    UserInputService.InputChanged:Connect(function(input)
+    return btn
+end
+
+function CreateKeyGUI()
+    local keyFrame = Instance.new("Frame")
+    keyFrame.Name = "KeyFrame"
+    keyFrame.Size = UDim2.new(0, 350, 0, 450)
+    keyFrame.Position = UDim2.new(0.5, -175, 0.5, -225)
+    keyFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+    keyFrame.BackgroundTransparency = 0.08
+    keyFrame.Parent = screenGui
+
+    local corner = Instance.new("UICorner", keyFrame)
+    corner.CornerRadius = UDim.new(0, 12)
+
+    local stroke = Instance.new("UIStroke", keyFrame)
+    stroke.Thickness = 4
+    stroke.Color = Color3.fromRGB(0, 120, 255)
+
+    -- Glowing loop effect
+    RunService.Heartbeat:Connect(function()
+        stroke.Transparency = 0.3 + 0.3 * math.sin(tick() * 3)
+    end)
+
+    local scale = Instance.new("UIScale", keyFrame)
+    scale.Scale = 0
+    TweenService:Create(scale, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 60)
+    title.BackgroundTransparency = 1
+    title.Text = "Verification"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 28
+    title.Parent = keyFrame
+
+    -- Key input
+    local keyBox = Instance.new("TextBox")
+    keyBox.Size = UDim2.new(0.8, 0, 0, 50)
+    keyBox.Position = UDim2.new(0.1, 0, 0.25, 0)
+    keyBox.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+    keyBox.PlaceholderText = "Enter Key"
+    keyBox.TextColor3 = Color3.new(1, 1, 1)
+    keyBox.Font = Enum.Font.Gotham
+    keyBox.TextSize = 18
+    keyBox.Parent = keyFrame
+
+    Instance.new("UICorner", keyBox).CornerRadius = UDim.new(0, 8)
+    local boxStroke = Instance.new("UIStroke", keyBox)
+    boxStroke.Color = Color3.fromRGB(0, 120, 255)
+    boxStroke.Thickness = 2
+
+    -- Buttons
+    local verifyBtn = CreateButton(keyFrame, "Verify", UDim2.new(0.1, 0, 0.5, 0), Color3.fromRGB(0, 255, 0))
+    local getKeyBtn = CreateButton(keyFrame, "Get Key", UDim2.new(0.55, 0, 0.5, 0), Color3.fromRGB(180, 0, 255))
+
+    -- Info text
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Size = UDim2.new(0.8, 0, 0, 100)
+    infoLabel.Position = UDim2.new(0.1, 0, 0.7, 0)
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.Text = "The key is 100% free in the discord!\nClick 'Get Key' to receive it."
+    infoLabel.TextColor3 = Color3.new(1, 1, 1)
+    infoLabel.TextSize = 18
+    infoLabel.TextWrapped = true
+    infoLabel.Parent = keyFrame
+
+    -- Get Key fills the correct key (simulating "getting from discord")
+    getKeyBtn.MouseButton1Click:Connect(function()
+        keyBox.Text = correctKey
+    end)
+
+    -- Verify
+    verifyBtn.MouseButton1Click:Connect(function()
+        if keyBox.Text == correctKey then
+            -- Save state for this session
+            local verified = Instance.new("BoolValue")
+            verified.Name = "KeyVerified"
+            verified.Value = true
+            verified.Parent = player
+
+            -- Smooth exit animation
+            TweenService:Create(scale, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Scale = 0}):Play()
+            task.wait(0.5)
+            keyFrame:Destroy()
+            CreateMainGUI()
+        else
+            -- Shake on wrong key
+            local originalPos = keyFrame.Position
+            TweenService:Create(keyFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad), {Position = originalPos + UDim2.new(0, 15, 0, 0)}):Play()
+            task.wait(0.1)
+            TweenService:Create(keyFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad), {Position = originalPos + UDim2.new(0, -15, 0, 0)}):Play()
+            task.wait(0.1)
+            TweenService:Create(keyFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad), {Position = originalPos}):Play()
+        end
+    end)
+end
+
+function CreateMainGUI()
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 700, 0, 500)
+    mainFrame.Position = UDim2.new(0.5, -350, 0.5, -250)
+    mainFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+    mainFrame.BackgroundTransparency = 0.08
+    mainFrame.ClipsDescendants = true
+    mainFrame.Parent = screenGui
+
+    local corner = Instance.new("UICorner", mainFrame)
+    corner.CornerRadius = UDim.new(0, 12)
+
+    local stroke = Instance.new("UIStroke", mainFrame)
+    stroke.Thickness = 4
+    stroke.Color = Color3.fromRGB(0, 120, 255)
+
+    RunService.Heartbeat:Connect(function()
+        stroke.Transparency = 0.3 + 0.3 * math.sin(tick() * 3)
+    end)
+
+    local scale = Instance.new("UIScale", mainFrame)
+    scale.Scale = 0
+    TweenService:Create(scale, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+
+    -- Top bar (draggable)
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1, 0, 0, 40)
+    topBar.BackgroundColor3 = Color3.new(0.05, 0.05, 0.05)
+    topBar.BackgroundTransparency = 0.3
+    topBar.Parent = mainFrame
+
+    local topCorner = Instance.new("UICorner", topBar)
+    topCorner.CornerRadius = UDim.new(0, 12)
+
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(0.7, 0, 1, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "Polished GUI"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 22
+    title.Parent = topBar
+
+    -- Minimize & Close buttons
+    local minimizeBtn = Instance.new("TextButton")
+    minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+    minimizeBtn.Position = UDim2.new(1, -70, 0, 5)
+    minimizeBtn.BackgroundTransparency = 1
+    minimizeBtn.Text = "−"
+    minimizeBtn.TextColor3 = Color3.new(1, 1, 1)
+    minimizeBtn.Font = Enum.Font.GothamBold
+    minimizeBtn.TextSize = 30
+    minimizeBtn.Parent = topBar
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 5)
+    closeBtn.BackgroundTransparency = 1
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 22
+    closeBtn.Parent = topBar
+
+    -- Tab system
+    local tabContainer = Instance.new("Frame")
+    tabContainer.Size = UDim2.new(1, 0, 0, 50)
+    tabContainer.Position = UDim2.new(0, 0, 0, 40)
+    tabContainer.BackgroundTransparency = 1
+    tabContainer.Parent = mainFrame
+
+    local tabLayout = Instance.new("UIListLayout")
+    tabLayout.FillDirection = Enum.FillDirection.Horizontal
+    tabLayout.Padding = UDim.new(0, 10)
+    tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    tabLayout.Parent = tabContainer
+
+    local contentContainer = Instance.new("Frame")
+    contentContainer.Size = UDim2.new(1, 0, 1, -90)
+    contentContainer.Position = UDim2.new(0, 0, 0, 90)
+    contentContainer.BackgroundTransparency = 1
+    contentContainer.Parent = mainFrame
+
+    local tabs = {}
+    local contents = {}
+
+    local function AddTab(name, welcomeText)
+        local tabBtn = Instance.new("TextButton")
+        tabBtn.Size = UDim2.new(0, 150, 1, 0)
+        tabBtn.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+        tabBtn.Text = name
+        tabBtn.TextColor3 = Color3.new(1, 1, 1)
+        tabBtn.Font = Enum.Font.GothamBold
+        tabBtn.Parent = tabContainer
+
+        Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 8)
+
+        local tabStroke = Instance.new("UIStroke", tabBtn)
+        tabStroke.Color = Color3.fromRGB(0, 120, 255)
+        tabStroke.Transparency = 1
+        tabStroke.Thickness = 3
+
+        local content = Instance.new("ScrollingFrame")
+        content.Size = UDim2.new(1, 0, 1, 0)
+        content.BackgroundTransparency = 1
+        content.Visible = false
+        content.CanvasSize = UDim2.new(0, 0, 0, 0)
+        content.Parent = contentContainer
+
+        local contentLabel = Instance.new("TextLabel")
+        contentLabel.Size = UDim2.new(1, -20, 0, 200)
+        contentLabel.Position = UDim2.new(0, 10, 0, 10)
+        contentLabel.BackgroundTransparency = 1
+        contentLabel.Text = welcomeText or ("Welcome to the " .. name .. " tab!")
+        contentLabel.TextColor3 = Color3.new(1, 1, 1)
+        contentLabel.TextWrapped = true
+        contentLabel.TextSize = 20
+        contentLabel.Parent = content
+
+        tabBtn.MouseButton1Click:Connect(function()
+            for _, c in contents do c.Visible = false end
+            for _, t in tabs do t.stroke.Transparency = 1 end
+            content.Visible = true
+            tabStroke.Transparency = 0
+        end)
+
+        table.insert(tabs, {btn = tabBtn, stroke = tabStroke})
+        table.insert(contents, content)
+    end
+
+    AddTab("Home", "Welcome to your polished GUI!\nEnjoy the features.")
+    AddTab("Scripts", "Script hub section\n(Execute scripts here)")
+    AddTab("Settings", "GUI settings\n(Coming soon)")
+
+    -- Default tab
+    contents[1].Visible = true
+    tabs[1].stroke.Transparency = 0
+
+    -- Draggable (top bar)
+    local dragging, dragInput, dragStart, startPos
+    local function updateDrag(input)
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+    topBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = mainFrame.Position
+        end
+    end)
+    topBar.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement then
             dragInput = input
         end
     end)
-
-    game:GetService("RunService").Heartbeat:Connect(function()
-        if dragging and dragInput then
-            local delta = dragInput.Position - mousePos
-            tweenObject(frame, {
-                Position = UDim2.new(
-                    framePos.X.Scale,
-                    framePos.X.Offset + delta.X,
-                    framePos.Y.Scale,
-                    framePos.Y.Offset + delta.Y
-                )
-            }, 0.1, Enum.EasingStyle.Linear)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input == dragInput then
+            updateDrag(input)
         end
     end)
-end
-
-local function makeResizable(frame)
-    local resizeHandle = Instance.new("TextButton")
-    resizeHandle.Size = UDim2.new(0, 20, 0, 20)
-    resizeHandle.Position = UDim2.new(1, -20, 1, -20)
-    resizeHandle.AnchorPoint = Vector2.new(1, 1)
-    resizeHandle.BackgroundColor3 = CONFIG.Colors.Blue
-    resizeHandle.Text = ""
-    resizeHandle.Parent = frame
-    createCorner(resizeHandle, 4)
-
-    local resizing = false
-    local startSize, startPos
-
-    resizeHandle.MouseButton1Down:Connect(function()
-        resizing = true
-        startSize = frame.Size
-        startPos = UserInputService:GetMouseLocation()
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
     end)
 
+    -- Resizable (bottom-right handle)
+    local resizeHandle = Instance.new("Frame")
+    resizeHandle.Size = UDim2.new(0, 20, 0, 20)
+    resizeHandle.Position = UDim2.new(1, -20, 1, -20)
+    resizeHandle.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+    resizeHandle.Parent = mainFrame
+    Instance.new("UICorner", resizeHandle).CornerRadius = UDim.new(0, 5)
+
+    local resizing, resizeStart, startSize
+    local function updateResize(input)
+        local delta = input.Position - resizeStart
+        local newX = math.max(500, startSize.X.Offset + delta.X)
+        local newY = math.max(400, startSize.Y.Offset + delta.Y)
+        mainFrame.Size = UDim2.new(0, newX, 0, newY)
+    end
+    resizeHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            resizing = true
+            resizeStart = input.Position
+            startSize = mainFrame.Size
+        end
+    end)
+    resizeHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if resizing and input == dragInput then
+            updateResize(input)
+        end
+    end)
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             resizing = false
         end
     end)
 
-    game:GetService("RunService").Heartbeat:Connect(function()
-        if resizing then
-            local currentPos = UserInputService:GetMouseLocation()
-            local delta = currentPos - startPos
-            local newSize = UDim2.new(
-                0,
-                math.max(300, startSize.X.Offset + delta.X),
-                0,
-                math.max(200, startSize.Y.Offset + delta.Y)
-            )
-            frame.Size = newSize
+    -- Minimize
+    local minimized = false
+    local openBtn
+    minimizeBtn.MouseButton1Click:Connect(function()
+        if not minimized then
+            TweenService:Create(scale, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {Scale = 0}):Play()
+            task.wait(0.4)
+            mainFrame.Visible = false
+            minimized = true
+
+            -- Draggable opener button (empty ImageButton with blue stroke)
+            openBtn = Instance.new("ImageButton")
+            openBtn.Size = UDim2.new(0, 60, 0, 60)
+            openBtn.Position = UDim2.new(0, 50, 0.5, -30)
+            openBtn.BackgroundColor3 = Color3.new(0, 0, 0)
+            openBtn.BackgroundTransparency = 0.3
+            openBtn.Image = ""
+            openBtn.Parent = screenGui
+
+            Instance.new("UICorner", openBtn).CornerRadius = UDim.new(1, 0)
+
+            local openStroke = Instance.new("UIStroke", openBtn)
+            openStroke.Color = Color3.fromRGB(0, 120, 255)
+            openStroke.Thickness = 4
+            RunService.Heartbeat:Connect(function()
+                openStroke.Transparency = 0.2 + 0.3 * math.sin(tick() * 4)
+            end)
+
+            -- Make opener draggable
+            local oDragging, oDragInput, oDragStart, oStartPos = false
+            local function oUpdate(input)
+                local delta = input.Position - oDragStart
+                openBtn.Position = UDim2.new(oStartPos.X.Scale, oStartPos.X.Offset + delta.X, oStartPos.Y.Scale, oStartPos.Y.Offset + delta.Y)
+            end
+            openBtn.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    oDragging = true
+                    oDragStart = input.Position
+                    oStartPos = openBtn.Position
+                end
+            end)
+            openBtn.InputChanged:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseMovement then
+                    oDragInput = input
+                end
+            end)
+            UserInputService.InputChanged:Connect(function(input)
+                if oDragging and input == oDragInput then
+                    oUpdate(input)
+                end
+            end)
+            UserInputService.InputEnded:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    oDragging = false
+                end
+            end)
+
+            openBtn.MouseButton1Click:Connect(function()
+                mainFrame.Visible = true
+                TweenService:Create(scale, TweenInfo.new(0.5, Enum.EasingStyle.Back), {Scale = 1}):Play()
+                openBtn:Destroy()
+                minimized = false
+            end)
         end
     end)
-end
 
--- Key System Frame
-local function createKeySystem()
-    local keyFrame = Instance.new("Frame")
-    keyFrame.Name = "KeyFrame"
-    keyFrame.Size = UDim2.new(0, 400, 0, 250)
-    keyFrame.Position = UDim2.new(0.5, -200, 0.5, -125)
-    keyFrame.BackgroundColor3 = CONFIG.Colors.Background
-    keyFrame.BackgroundTransparency = 0.08
-    keyFrame.Parent = screenGui
-    createStroke(keyFrame, CONFIG.Colors.Blue, 3)
-    createCorner(keyFrame, 12)
+    -- Close with confirmation
+    closeBtn.MouseButton1Click:Connect(function()
+        local confFrame = Instance.new("Frame")
+        confFrame.Size = UDim2.new(0, 350, 0, 200)
+        confFrame.Position = UDim2.new(0.5, -175, 0.5, -100)
+        confFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+        confFrame.BackgroundTransparency = 0.08
+        confFrame.Parent = screenGui
 
-    -- Animated glow effect
-    local glow = Instance.new("ImageLabel")
-    glow.Name = "Glow"
-    glow.Size = UDim2.new(1, 40, 1, 40)
-    glow.Position = UDim2.new(0.5, 0, 0.5, 0)
-    glow.AnchorPoint = Vector2.new(0.5, 0.5)
-    glow.BackgroundTransparency = 1
-    glow.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
-    glow.ImageColor3 = CONFIG.Colors.Blue
-    glow.ImageTransparency = 0.7
-    glow.Parent = keyFrame
+        local cScale = Instance.new("UIScale", confFrame)
+        cScale.Scale = 0
+        TweenService:Create(cScale, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
 
-    -- Pulse animation for glow
-    spawn(function()
-        while keyFrame.Parent do
-            tweenObject(glow, {ImageTransparency = 0.5}, 1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-            wait(1)
-            tweenObject(glow, {ImageTransparency = 0.8}, 1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-            wait(1)
-        end
-    end)
+        Instance.new("UICorner", confFrame).CornerRadius = UDim.new(0, 12)
 
-    -- Title
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -40, 0, 50)
-    title.Position = UDim2.new(0, 20, 0, 20)
-    title.BackgroundTransparency = 1
-    title.Text = "KEY VERIFICATION"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextSize = 24
-    title.Font = Enum.Font.GothamBold
-    title.Parent = keyFrame
+        local cStroke = Instance.new("UIStroke", confFrame)
+        cStroke.Color = Color3.fromRGB(255, 0, 0)
+        cStroke.Thickness = 4
 
-    -- Key Input
-    local keyInput = Instance.new("TextBox")
-    keyInput.Size = UDim2.new(1, -60, 0, 40)
-    keyInput.Position = UDim2.new(0, 30, 0, 80)
-    keyInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    keyInput.BackgroundTransparency = 0.3
-    keyInput.PlaceholderText = "Enter Key Here..."
-    keyInput.Text = ""
-    keyInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-    keyInput.TextSize = 16
-    keyInput.Font = Enum.Font.Gotham
-    keyInput.Parent = keyFrame
-    createStroke(keyInput, CONFIG.Colors.Blue, 2)
-    createCorner(keyInput, 8)
+        local header = Instance.new("TextLabel")
+        header.Size = UDim2.new(1, 0, 0, 60)
+        header.BackgroundTransparency = 1
+        header.Text = "Are you sure?"
+        header.TextColor3 = Color3.new(1, 1, 1)
+        header.Font = Enum.Font.GothamBold
+        header.TextSize = 26
+        header.Parent = confFrame
 
-    -- Verify Button
-    local verifyBtn = Instance.new("TextButton")
-    verifyBtn.Size = UDim2.new(0, 160, 0, 40)
-    verifyBtn.Position = UDim2.new(0, 30, 0, 140)
-    verifyBtn.BackgroundColor3 = CONFIG.Colors.Background
-    verifyBtn.Text = "Verify"
-    verifyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    verifyBtn.TextSize = 18
-    verifyBtn.Font = Enum.Font.GothamBold
-    verifyBtn.Parent = keyFrame
-    createStroke(verifyBtn, CONFIG.Colors.Green, 2)
-    createCorner(verifyBtn, 8)
+        local desc = Instance.new("TextLabel")
+        desc.Size = UDim2.new(0.9, 0, 0, 60)
+        desc.Position = UDim2.new(0.05, 0, 0.3, 0)
+        desc.BackgroundTransparency = 1
+        desc.Text = "Press Close to close the GUI or No to cancel."
+        desc.TextColor3 = Color3.new(1, 1, 1)
+        desc.TextWrapped = true
+        desc.TextSize = 18
+        desc.Parent = confFrame
 
-    -- Get Key Button
-    local getKeyBtn = Instance.new("TextButton")
-    getKeyBtn.Size = UDim2.new(0, 160, 0, 40)
-    getKeyBtn.Position = UDim2.new(1, -190, 0, 140)
-    getKeyBtn.BackgroundColor3 = CONFIG.Colors.Background
-    getKeyBtn.Text = "Get Key"
-    getKeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    getKeyBtn.TextSize = 18
-    getKeyBtn.Font = Enum.Font.GothamBold
-    getKeyBtn.Parent = keyFrame
-    createStroke(getKeyBtn, CONFIG.Colors.Purple, 2)
-    createCorner(getKeyBtn, 8)
+        local closeConf = CreateButton(confFrame, "Close", UDim2.new(0.1, 0, 0.65, 0), Color3.fromRGB(255, 0, 0))
+        local noConf = CreateButton(confFrame, "No", UDim2.new(0.55, 0, 0.65, 0), Color3.fromRGB(0, 255, 0))
 
-    -- Info Label
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Size = UDim2.new(1, -40, 0, 30)
-    infoLabel.Position = UDim2.new(0, 20, 1, -40)
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Text = "🔑 Key is 100% FREE in Discord!"
-    infoLabel.TextColor3 = CONFIG.Colors.Blue
-    infoLabel.TextSize = 14
-    infoLabel.Font = Enum.Font.GothamBold
-    infoLabel.Parent = keyFrame
-
-    -- Button Hover Effects
-    local function addButtonEffect(button, hoverColor)
-        button.MouseEnter:Connect(function()
-            tweenObject(button, {BackgroundTransparency = 0.3}, 0.2)
+        closeConf.MouseButton1Click:Connect(function()
+            TweenService:Create(cScale, TweenInfo.new(0.3), {Scale = 0}):Play()
+            task.wait(0.3)
+            screenGui:Destroy()
         end)
-        button.MouseLeave:Connect(function()
-            tweenObject(button, {BackgroundTransparency = 0}, 0.2)
-        end)
-    end
 
-    addButtonEffect(verifyBtn, CONFIG.Colors.Green)
-    addButtonEffect(getKeyBtn, CONFIG.Colors.Purple)
-
-    -- Get Key Button Function
-    getKeyBtn.MouseButton1Click:Connect(function()
-        setclipboard("https://discord.gg/yourserver") -- Change to your Discord link
-        infoLabel.Text = "📋 Discord Link Copied!"
-        infoLabel.TextColor3 = CONFIG.Colors.Green
-        wait(2)
-        infoLabel.Text = "🔑 Key is 100% FREE in Discord!"
-        infoLabel.TextColor3 = CONFIG.Colors.Blue
-    end)
-
-    return keyFrame, verifyBtn, keyInput
-end
-
--- Main GUI Frame
-local function createMainGUI()
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 600, 0, 400)
-    mainFrame.Position = UDim2.new(0.5, -300, 0.5, -200)
-    mainFrame.BackgroundColor3 = CONFIG.Colors.Background
-    mainFrame.BackgroundTransparency = 0.08
-    mainFrame.Visible = false
-    mainFrame.Parent = screenGui
-    createStroke(mainFrame, CONFIG.Colors.Blue, 3)
-    createCorner(mainFrame, 12)
-
-    -- Top Bar
-    local topBar = Instance.new("Frame")
-    topBar.Name = "TopBar"
-    topBar.Size = UDim2.new(1, 0, 0, 40)
-    topBar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-    topBar.BackgroundTransparency = 0.3
-    topBar.Parent = mainFrame
-    createCorner(topBar, 12)
-
-    -- Title
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Size = UDim2.new(0, 200, 1, 0)
-    titleLabel.Position = UDim2.new(0, 15, 0, 0)
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Text = "⚡ Advanced GUI"
-    titleLabel.TextColor3 = CONFIG.Colors.Blue
-    titleLabel.TextSize = 18
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.Parent = topBar
-
-    -- Minimize Button
-    local minimizeBtn = Instance.new("TextButton")
-    minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
-    minimizeBtn.Position = UDim2.new(1, -75, 0, 5)
-    minimizeBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    minimizeBtn.Text = "—"
-    minimizeBtn.TextColor3 = CONFIG.Colors.Blue
-    minimizeBtn.TextSize = 20
-    minimizeBtn.Font = Enum.Font.GothamBold
-    minimizeBtn.Parent = topBar
-    createCorner(minimizeBtn, 6)
-
-    -- Close Button
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 30, 0, 30)
-    closeBtn.Position = UDim2.new(1, -40, 0, 5)
-    closeBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    closeBtn.Text = "✕"
-    closeBtn.TextColor3 = CONFIG.Colors.Red
-    closeBtn.TextSize = 18
-    closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.Parent = topBar
-    createCorner(closeBtn, 6)
-
-    -- Tab Container
-    local tabContainer = Instance.new("Frame")
-    tabContainer.Name = "TabContainer"
-    tabContainer.Size = UDim2.new(0, 120, 1, -50)
-    tabContainer.Position = UDim2.new(0, 10, 0, 45)
-    tabContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-    tabContainer.BackgroundTransparency = 0.3
-    tabContainer.Parent = mainFrame
-    createCorner(tabContainer, 8)
-
-    -- Content Container
-    local contentContainer = Instance.new("Frame")
-    contentContainer.Name = "ContentContainer"
-    contentContainer.Size = UDim2.new(1, -145, 1, -50)
-    contentContainer.Position = UDim2.new(0, 135, 0, 45)
-    contentContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-    contentContainer.BackgroundTransparency = 0.3
-    contentContainer.Parent = mainFrame
-    createCorner(contentContainer, 8)
-
-    -- Tab System
-    local tabs = {"Home", "Scripts", "Player", "Settings"}
-    local tabButtons = {}
-    local contentPages = {}
-
-    for i, tabName in ipairs(tabs) do
-        -- Tab Button
-        local tabBtn = Instance.new("TextButton")
-        tabBtn.Size = UDim2.new(1, -10, 0, 40)
-        tabBtn.Position = UDim2.new(0, 5, 0, (i - 1) * 45 + 5)
-        tabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-        tabBtn.Text = tabName
-        tabBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-        tabBtn.TextSize = 14
-        tabBtn.Font = Enum.Font.GothamBold
-        tabBtn.Parent = tabContainer
-        createCorner(tabBtn, 6)
-        table.insert(tabButtons, tabBtn)
-
-        -- Content Page
-        local contentPage = Instance.new("ScrollingFrame")
-        contentPage.Name = tabName .. "Page"
-        contentPage.Size = UDim2.new(1, -20, 1, -20)
-        contentPage.Position = UDim2.new(0, 10, 0, 10)
-        contentPage.BackgroundTransparency = 1
-        contentPage.ScrollBarThickness = 6
-        contentPage.ScrollBarImageColor3 = CONFIG.Colors.Blue
-        contentPage.Visible = (i == 1)
-        contentPage.Parent = contentContainer
-        table.insert(contentPages, contentPage)
-
-        -- Add sample content
-        local sampleLabel = Instance.new("TextLabel")
-        sampleLabel.Size = UDim2.new(1, -20, 0, 100)
-        sampleLabel.Position = UDim2.new(0, 10, 0, 10)
-        sampleLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-        sampleLabel.Text = "Welcome to " .. tabName .. " Tab!\n\nAdd your features here."
-        sampleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        sampleLabel.TextSize = 16
-        sampleLabel.Font = Enum.Font.Gotham
-        sampleLabel.TextWrapped = true
-        sampleLabel.Parent = contentPage
-        createCorner(sampleLabel, 8)
-
-        -- Tab Button Click
-        tabBtn.MouseButton1Click:Connect(function()
-            for j, btn in ipairs(tabButtons) do
-                if j == i then
-                    tweenObject(btn, {BackgroundColor3 = CONFIG.Colors.Blue}, 0.2)
-                    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    contentPages[j].Visible = true
-                else
-                    tweenObject(btn, {BackgroundColor3 = Color3.fromRGB(30, 30, 30)}, 0.2)
-                    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
-                    contentPages[j].Visible = false
-                end
-            end
-        end)
-    end
-
-    -- Set default active tab
-    tabButtons[1].BackgroundColor3 = CONFIG.Colors.Blue
-    tabButtons[1].TextColor3 = Color3.fromRGB(255, 255, 255)
-
-    makeDraggable(mainFrame, topBar)
-    makeResizable(mainFrame)
-
-    return mainFrame, minimizeBtn, closeBtn
-end
-
--- Minimized Button
-local function createMinimizedButton()
-    local miniBtn = Instance.new("ImageButton")
-    miniBtn.Name = "MinimizedButton"
-    miniBtn.Size = UDim2.new(0, 60, 0, 60)
-    miniBtn.Position = UDim2.new(0, 20, 0.5, -30)
-    miniBtn.BackgroundColor3 = CONFIG.Colors.Background
-    miniBtn.BackgroundTransparency = 0.08
-    miniBtn.Visible = false
-    miniBtn.Parent = screenGui
-    createStroke(miniBtn, CONFIG.Colors.Blue, 3)
-    createCorner(miniBtn, 12)
-
-    -- Icon (you can replace with actual image)
-    local icon = Instance.new("TextLabel")
-    icon.Size = UDim2.new(1, 0, 1, 0)
-    icon.BackgroundTransparency = 1
-    icon.Text = "⚡"
-    icon.TextColor3 = CONFIG.Colors.Blue
-    icon.TextSize = 30
-    icon.Font = Enum.Font.GothamBold
-    icon.Parent = miniBtn
-
-    makeDraggable(miniBtn)
-
-    return miniBtn
-end
-
--- Confirmation Dialog
-local function createConfirmDialog(onConfirm)
-    local confirmFrame = Instance.new("Frame")
-    confirmFrame.Name = "ConfirmFrame"
-    confirmFrame.Size = UDim2.new(0, 350, 0, 180)
-    confirmFrame.Position = UDim2.new(0.5, -175, 0.5, -90)
-    confirmFrame.BackgroundColor3 = CONFIG.Colors.Background
-    confirmFrame.BackgroundTransparency = 0.08
-    confirmFrame.Parent = screenGui
-    createStroke(confirmFrame, CONFIG.Colors.Red, 3)
-    createCorner(confirmFrame, 12)
-
-    -- Header
-    local header = Instance.new("TextLabel")
-    header.Size = UDim2.new(1, -40, 0, 40)
-    header.Position = UDim2.new(0, 20, 0, 15)
-    header.BackgroundTransparency = 1
-    header.Text = "⚠️ Are you sure?"
-    header.TextColor3 = Color3.fromRGB(255, 255, 255)
-    header.TextSize = 20
-    header.Font = Enum.Font.GothamBold
-    header.Parent = confirmFrame
-
-    -- Description
-    local description = Instance.new("TextLabel")
-    description.Size = UDim2.new(1, -40, 0, 50)
-    description.Position = UDim2.new(0, 20, 0, 55)
-    description.BackgroundTransparency = 1
-    description.Text = "Press Close to close the frame\nor No to cancel."
-    description.TextColor3 = Color3.fromRGB(200, 200, 200)
-    description.TextSize = 14
-    description.Font = Enum.Font.Gotham
-    description.TextWrapped = true
-    description.Parent = confirmFrame
-
-    -- Close Button
-    local closeConfirmBtn = Instance.new("TextButton")
-    closeConfirmBtn.Size = UDim2.new(0, 140, 0, 40)
-    closeConfirmBtn.Position = UDim2.new(0, 20, 1, -55)
-    closeConfirmBtn.BackgroundColor3 = CONFIG.Colors.Background
-    closeConfirmBtn.Text = "Close"
-    closeConfirmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeConfirmBtn.TextSize = 16
-    closeConfirmBtn.Font = Enum.Font.GothamBold
-    closeConfirmBtn.Parent = confirmFrame
-    createStroke(closeConfirmBtn, CONFIG.Colors.Red, 2)
-    createCorner(closeConfirmBtn, 8)
-
-    -- No Button
-    local noBtn = Instance.new("TextButton")
-    noBtn.Size = UDim2.new(0, 140, 0, 40)
-    noBtn.Position = UDim2.new(1, -160, 1, -55)
-    noBtn.BackgroundColor3 = CONFIG.Colors.Background
-    noBtn.Text = "No"
-    noBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    noBtn.TextSize = 16
-    noBtn.Font = Enum.Font.GothamBold
-    noBtn.Parent = confirmFrame
-    createStroke(noBtn, CONFIG.Colors.Green, 2)
-    createCorner(noBtn, 8)
-
-    -- Animate in
-    confirmFrame.Size = UDim2.new(0, 0, 0, 0)
-    tweenObject(confirmFrame, {Size = UDim2.new(0, 350, 0, 180)}, 0.3, Enum.EasingStyle.Back)
-
-    closeConfirmBtn.MouseButton1Click:Connect(function()
-        tweenObject(confirmFrame, {Size = UDim2.new(0, 0, 0, 0)}, 0.2).Completed:Connect(function()
-            confirmFrame:Destroy()
-            if onConfirm then onConfirm() end
-        end)
-    end)
-
-    noBtn.MouseButton1Click:Connect(function()
-        tweenObject(confirmFrame, {Size = UDim2.new(0, 0, 0, 0)}, 0.2).Completed:Connect(function()
-            confirmFrame:Destroy()
+        noConf.MouseButton1Click:Connect(function()
+            TweenService:Create(cScale, TweenInfo.new(0.3), {Scale = 0}):Play()
+            task.wait(0.3)
+            confFrame:Destroy()
         end)
     end)
 end
-
--- Check if key is saved
-local function checkSavedKey()
-    local success, savedKey = pcall(function()
-        return readfile(CONFIG.KeySaveFile .. ".txt")
-    end)
-    return success and savedKey == CONFIG.CorrectKey
-end
-
--- Save key
-local function saveKey()
-    pcall(function()
-        writefile(CONFIG.KeySaveFile .. ".txt", CONFIG.CorrectKey)
-    end)
-end
-
--- Main Initialization
-local function init()
-    if checkSavedKey() then
-        -- Key already verified, show main GUI
-        local mainFrame, minimizeBtn, closeBtn = createMainGUI()
-        local miniBtn = createMinimizedButton()
-        
-        -- Animate main frame in
-        mainFrame.Size = UDim2.new(0, 0, 0, 0)
-        mainFrame.Visible = true
-        tweenObject(mainFrame, {Size = UDim2.new(0, 600, 0, 400)}, 0.5, Enum.EasingStyle.Back)
-
-        -- Minimize functionality
-        minimizeBtn.MouseButton1Click:Connect(function()
-            tweenObject(mainFrame, {Size = UDim2.new(0, 0, 0, 0)}, 0.3).Completed:Connect(function()
-                mainFrame.Visible = false
-                miniBtn.Visible = true
-                tweenObject(miniBtn, {BackgroundTransparency = 0.08}, 0.2)
-            end)
-        end)
-
-        miniBtn.MouseButton1Click:Connect(function()
-            miniBtn.Visible = false
-            mainFrame.Visible = true
-            mainFrame.Size = UDim2.new(0, 0, 0, 0)
-            tweenObject(mainFrame, {Size = UDim2.new(0, 600, 0, 400)}, 0.3, Enum.EasingStyle.Back)
-        end)
-
-        -- Close functionality
-        closeBtn.MouseButton1Click:Connect(function()
-            createConfirmDialog(function()
-                screenGui:Destroy()
-            end)
-        end)
-    else
-        -- Show key system
-        local keyFrame, verifyBtn, keyInput = createKeySystem()
-        
-        -- Animate in
-        keyFrame.Size = UDim2.new(0, 0, 0, 0)
-        tweenObject(keyFrame, {Size = UDim2.new(0, 400, 0, 250)}, 0.5, Enum.EasingStyle.Back)
-
-        verifyBtn.MouseButton1Click:Connect(function()
-            if keyInput.Text == CONFIG.CorrectKey then
-                saveKey()
-                
-                -- Success animation
-                tweenObject(keyFrame, {
-                    Size = UDim2.new(0, 0, 0, 0),
-                    Rotation = 180
-                }, 0.5, Enum.EasingStyle.Back).Completed:Connect(function()
-                    keyFrame:Destroy()
-                    
-                    -- Show main GUI
-                    local mainFrame, minimizeBtn, closeBtn = createMainGUI()
-                    local miniBtn = createMinimizedButton()
-                    
-                    mainFrame.Size = UDim2.new(0, 0, 0, 0)
-                    mainFrame.Visible = true
-                    tweenObject(mainFrame, {Size = UDim2.new(0, 600, 0, 400)}, 0.5, Enum.EasingStyle.Back)
-
-                    -- Minimize functionality
-                    minimizeBtn.MouseButton1Click:Connect(function()
-                        tweenObject(mainFrame, {Size = UDim2.new(0, 0, 0, 0)}, 0.3).Completed:Connect(function()
-                            mainFrame.Visible = false
-                            miniBtn.Visible = true
-                            tweenObject(miniBtn, {BackgroundTransparency = 0.08}, 0.2)
-                        end)
-                    end)
-
-                    miniBtn.MouseButton1Click:Connect(function()
-                        miniBtn.Visible = false
-                        mainFrame.Visible = true
-                        mainFrame.Size = UDim2.new(0, 0, 0, 0)
-                        tweenObject(mainFrame, {Size = UDim2.new(0, 600, 0, 400)}, 0.3, Enum.EasingStyle.Back)
-                    end)
-
-                    -- Close functionality
-                    closeBtn.MouseButton1Click:Connect(function()
-                        createConfirmDialog(function()
-                            screenGui:Destroy()
-                        end)
-                    end)
-                end)
-            else
-                -- Wrong key animation
-                keyInput.Text = ""
-                keyInput.PlaceholderText = "❌ Wrong Key! Try Again..."
-                keyInput.PlaceholderColor3 = CONFIG.Colors.Red
-                
-                for i = 1, 3 do
-                    tweenObject(keyFrame, {Position = UDim2.new(0.5, -210, 0.5, -125)}, 0.05)
-                    wait(0.05)
-                    tweenObject(keyFrame, {Position = UDim2.new(0.5, -190, 0.5, -125)}, 0.05)
-                    wait(0.05)
-                end
-                tweenObject(keyFrame, {Position = UDim2.new(0.5, -200, 0.5, -125)}, 0.1)
-                
-                wait(1)
-                keyInput.PlaceholderText = "Enter Key Here..."
-                keyInput.PlaceholderColor3 = Color3.fromRGB(178, 178, 178)
-            end
-        end)
-    end
-end
-
--- Run the script
-init()
-
-print("Advanced GUI loaded successfully!")
