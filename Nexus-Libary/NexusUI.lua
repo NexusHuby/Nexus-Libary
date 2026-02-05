@@ -7,7 +7,7 @@ local Nexus = {}
 Nexus.__index = Nexus
 
 --// Configuration
-local ICON_URL = "https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/Nexus-Libary/NexusIcons.lua"
+local ICON_URL = "https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/refs/heads/main/Nexus-Libary/NexusIcons.lua"
 local DEFAULT_ICONS = { ["home"] = "rbxassetid://10709782497", ["settings"] = "rbxassetid://10734950309" }
 
 --// Services
