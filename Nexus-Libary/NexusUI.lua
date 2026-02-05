@@ -1,8 +1,8 @@
 --[[
-    NEXUS STANDALONE v13
-    - Added: "DEBUG RESET" Button (Pinned to screen for testing)
-    - Fixed: Header Divider visibility and Gradient logic
-    - Style: 0.08 Transparency "Glass" Key System & Hub
+    NEXUS STANDALONE v14
+    - FIXED: Master Reset button visibility (ZIndex 999)
+    - ADDED: Master Reset button is now DRAGGABLE
+    - STYLE: Main Hub Divider & 0.08 Glass Transparency
 ]]
 
 local Players = game:GetService("Players")
@@ -20,17 +20,16 @@ local CONFIG = {
     BG = Color3.fromRGB(10, 10, 10),
     MainTransparency = 0.08,
     ToggleImage = "rbxassetid://92090613790936",
-    Text = Color3.fromRGB(255, 255, 255),
-    DarkText = Color3.fromRGB(170, 170, 170)
+    Text = Color3.fromRGB(255, 255, 255)
 }
 
 --// UI Container
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "Nexus_v13"
+ScreenGui.Name = "Nexus_Final_v14"
 ScreenGui.Parent = (gethui and gethui()) or CoreGui
 ScreenGui.ResetOnSpawn = false
 
---// UTILITY: Dragging
+--// UTILITY: Enhanced Dragging
 local function MakeDraggable(obj)
     local dragging, dragStart, startPos
     obj.InputBegan:Connect(function(input)
@@ -49,39 +48,46 @@ local function MakeDraggable(obj)
     end)
 end
 
---// MASTER RESET BUTTON (For testing the Key System)
-local DebugReset = Instance.new("TextButton", ScreenGui)
-DebugReset.Size = UDim2.new(0, 100, 0, 30)
-DebugReset.Position = UDim2.new(1, -110, 0, 10) -- Top Right of Screen
-DebugReset.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-DebugReset.Text = "RESET DATA"
-DebugReset.TextColor3 = Color3.fromRGB(255, 255, 255)
-DebugReset.Font = Enum.Font.GothamBold
-DebugReset.TextSize = 12
-Instance.new("UICorner", DebugReset)
+--// 1. MASTER RESET BUTTON (PERSISTENT & DRAGGABLE)
+local MasterReset = Instance.new("TextButton")
+MasterReset.Name = "MasterReset"
+MasterReset.Parent = ScreenGui
+MasterReset.Size = UDim2.new(0, 120, 0, 35)
+MasterReset.Position = UDim2.new(0.5, -60, 0, 50) -- Top Center
+MasterReset.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+MasterReset.Text = "FORCE RESET"
+MasterReset.Font = Enum.Font.GothamBold
+MasterReset.TextColor3 = Color3.fromRGB(255, 255, 255)
+MasterReset.TextSize = 12
+MasterReset.ZIndex = 999 -- Keeps it above everything
+Instance.new("UICorner", MasterReset).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", MasterReset).Color = Color3.fromRGB(255, 255, 255)
 
-DebugReset.MouseButton1Click:Connect(function()
+MakeDraggable(MasterReset)
+
+MasterReset.MouseButton1Click:Connect(function()
     if isfile and isfile(CONFIG.SavePath) then
         delfile(CONFIG.SavePath)
-        ScreenGui:Destroy()
-        warn("Nexus: Data Reset. Re-execute to see Key System.")
     end
+    ScreenGui:Destroy()
+    print("Nexus: Data Cleared. Re-run script to see Key System.")
 end)
 
---// FLOATING TOGGLE
+--// 2. FLOATING TOGGLE ICON
 local ToggleBtn = Instance.new("ImageButton", ScreenGui)
 ToggleBtn.Size = UDim2.new(0, 55, 0, 55)
-ToggleBtn.Position = UDim2.new(0, 20, 0.8, 0)
+ToggleBtn.Position = UDim2.new(0, 20, 0.5, -27)
 ToggleBtn.BackgroundColor3 = CONFIG.BG
 ToggleBtn.BackgroundTransparency = 0.2
 ToggleBtn.Image = CONFIG.ToggleImage
 ToggleBtn.Visible = false
+ToggleBtn.ZIndex = 500
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 local tStroke = Instance.new("UIStroke", ToggleBtn)
 tStroke.Color = CONFIG.Accent; tStroke.Thickness = 2
 MakeDraggable(ToggleBtn)
 
---// MAIN HUB
+--// 3. MAIN HUB BUILDER
 local function OpenMainHub()
     local Main = Instance.new("Frame", ScreenGui)
     Main.Size = UDim2.new(0, 600, 0, 400)
@@ -92,7 +98,7 @@ local function OpenMainHub()
     local mStroke = Instance.new("UIStroke", Main)
     mStroke.Color = Color3.fromRGB(80, 80, 80); mStroke.Thickness = 1.5
     
-    -- HEADER DIVIDER
+    -- THE PERFECT DIVIDER
     local Divider = Instance.new("Frame", Main)
     Divider.Size = UDim2.new(1, -40, 0, 1)
     Divider.Position = UDim2.new(0, 20, 0, 48)
@@ -106,7 +112,7 @@ local function OpenMainHub()
     })
 
     local Title = Instance.new("TextLabel", Main)
-    Title.Text = CONFIG.Name; Title.Font = Enum.Font.GothamBold; Title.TextColor3 = CONFIG.Accent; Title.TextSize = 14
+    Title.Text = CONFIG.Name; Title.Font = Enum.Font.GothamBold; Title.TextColor3 = CONFIG.Accent
     Title.Position = UDim2.new(0, 25, 0, 18); Title.Size = UDim2.new(0, 200, 0, 20); Title.BackgroundTransparency = 1; Title.TextXAlignment = 0
 
     local Close = Instance.new("TextButton", Main)
@@ -122,13 +128,13 @@ local function OpenMainHub()
     MakeDraggable(Main)
 end
 
---// KEY SYSTEM
+--// 4. KEY SYSTEM BUILDER
 local function InitKeySystem()
     if isfile and isfile(CONFIG.SavePath) and readfile(CONFIG.SavePath) == CONFIG.Key then return OpenMainHub() end
 
     local KeyFrame = Instance.new("Frame", ScreenGui)
-    KeyFrame.Size = UDim2.new(0, 350, 0, 260)
-    KeyFrame.Position = UDim2.new(0.5, -175, 0.5, -130)
+    KeyFrame.Size = UDim2.new(0, 360, 0, 260)
+    KeyFrame.Position = UDim2.new(0.5, -180, 0.5, -130)
     KeyFrame.BackgroundColor3 = CONFIG.BG
     KeyFrame.BackgroundTransparency = CONFIG.MainTransparency
     Instance.new("UICorner", KeyFrame).CornerRadius = UDim.new(0, 12)
@@ -136,7 +142,7 @@ local function InitKeySystem()
     kStroke.Color = CONFIG.Accent; kStroke.Thickness = 1.5
 
     local kTitle = Instance.new("TextLabel", KeyFrame)
-    kTitle.Text = "NEXUS AUTH"; kTitle.Font = Enum.Font.GothamBold; kTitle.TextColor3 = CONFIG.Text; kTitle.Size = UDim2.new(1,0,0,60); kTitle.BackgroundTransparency = 1
+    kTitle.Text = "NEXUS AUTHENTICATION"; kTitle.Font = Enum.Font.GothamBold; kTitle.TextColor3 = CONFIG.Text; kTitle.Size = UDim2.new(1,0,0,60); kTitle.BackgroundTransparency = 1
 
     local Input = Instance.new("TextBox", KeyFrame)
     Input.Size = UDim2.new(0, 280, 0, 45); Input.Position = UDim2.new(0.5, -140, 0.4, 0); Input.BackgroundColor3 = Color3.fromRGB(20,20,20); Input.TextColor3 = CONFIG.Text; Input.PlaceholderText = "Enter Key..."; Input.Text = ""
@@ -156,7 +162,7 @@ local function InitKeySystem()
             KeyFrame:Destroy()
             OpenMainHub()
         else
-            Input.Text = "INVALID"
+            Input.Text = "INVALID KEY"
             task.wait(1)
             Input.Text = ""
         end
