@@ -1,8 +1,8 @@
 --[[
-    NEXUS STANDALONE v5
-    - Added "Reset Key" button (Deletes Save Data)
-    - Further Smoothed Resizing & Dragging
-    - Added Constraints to prevent UI from disappearing
+    NEXUS STANDALONE v6
+    - Fixed Reset Button Visibility (Moved to Sidebar)
+    - Added Sidebar Navigation
+    - Improved Resizing Hitbox
 ]]
 
 local Players = game:GetService("Players")
@@ -17,15 +17,16 @@ local CONFIG = {
     Name = "NEXUS HUB",
     Key = "NEXUS-2026",
     KeyLink = "https://discord.gg/nexus",
-    SavePath = "Nexus_SaveData.json", -- The file saved in your executor's 'workspace' folder
+    SavePath = "Nexus_SaveData.json",
     Accent = Color3.fromRGB(0, 140, 255),
     BG = Color3.fromRGB(15, 15, 15),
-    Secondary = Color3.fromRGB(22, 22, 22),
+    SidebarColor = Color3.fromRGB(20, 20, 20),
+    Secondary = Color3.fromRGB(25, 25, 25),
     Text = Color3.fromRGB(255, 255, 255),
     DarkText = Color3.fromRGB(160, 160, 160)
 }
 
---// Utility Functions
+--// Utility
 local function Create(class, props)
     local inst = Instance.new(class)
     for k, v in pairs(props) do inst[k] = v end
@@ -49,8 +50,7 @@ local function GetSavedKey() if isfile and isfile(CONFIG.SavePath) then return r
 local function ResetKey() 
     if isfile and isfile(CONFIG.SavePath) then 
         delfile(CONFIG.SavePath) 
-        ScreenGui:Destroy() -- Close UI after resetting
-        print("Nexus: Key data cleared. Please re-execute.")
+        ScreenGui:Destroy()
     end 
 end
 
@@ -59,7 +59,6 @@ local function MakeWindow(frame)
     local dragging, dragStart, startPos
     local resizing, resizeStartSize, resizeStartPos
 
-    -- TopBar Dragging
     frame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
@@ -68,12 +67,16 @@ local function MakeWindow(frame)
         end
     end)
 
-    -- Resize Handle
-    local ResizeHandle = Create("ImageLabel", {
+    local ResizeHandle = Create("Frame", {
         Parent = frame, Name = "ResizeHandle",
-        Size = UDim2.new(0, 18, 0, 18), Position = UDim2.new(1, -18, 1, -18),
-        BackgroundTransparency = 1, Image = "rbxassetid://6031925612",
-        ImageColor3 = CONFIG.DarkText, ZIndex = 10
+        Size = UDim2.new(0, 20, 0, 20), Position = UDim2.new(1, -20, 1, -20),
+        BackgroundTransparency = 1, ZIndex = 20
+    })
+    
+    -- Small visual indicator for resize
+    local ResizeIcon = Create("ImageLabel", {
+        Parent = ResizeHandle, Size = UDim2.new(0, 12, 0, 12), Position = UDim2.new(0.5, -6, 0.5, -6),
+        BackgroundTransparency = 1, Image = "rbxassetid://6031925612", ImageColor3 = CONFIG.DarkText
     })
 
     ResizeHandle.InputBegan:Connect(function(input)
@@ -81,13 +84,9 @@ local function MakeWindow(frame)
             resizing = true
             resizeStartPos = input.Position
             resizeStartSize = frame.Size
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then resizing = false end
-            end)
         end
     end)
 
-    -- Global Listener
     UIS.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement then
             if dragging then
@@ -95,9 +94,7 @@ local function MakeWindow(frame)
                 frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
             elseif resizing then
                 local delta = input.Position - resizeStartPos
-                local newX = math.max(400, resizeStartSize.X.Offset + delta.X)
-                local newY = math.max(250, resizeStartSize.Y.Offset + delta.Y)
-                frame.Size = UDim2.new(0, newX, 0, newY)
+                frame.Size = UDim2.new(0, math.max(450, resizeStartSize.X.Offset + delta.X), 0, math.max(300, resizeStartSize.Y.Offset + delta.Y))
             end
         end
     end)
@@ -114,46 +111,55 @@ end
 local function OpenMainHub()
     local Main = Create("Frame", {
         Name = "MainHub", Parent = ScreenGui, BackgroundColor3 = CONFIG.BG,
-        Size = UDim2.new(0, 500, 0, 300), Position = UDim2.new(0.5, -250, 0.5, -150),
+        Size = UDim2.new(0, 550, 0, 350), Position = UDim2.new(0.5, -275, 0.5, -175),
         ClipsDescendants = true
     })
-    Create("UICorner", {Parent = Main, CornerRadius = UDim.new(0, 8)})
-    Create("UIStroke", {Parent = Main, Color = Color3.fromRGB(45, 45, 45), Thickness = 1.2})
+    Create("UICorner", {Parent = Main, CornerRadius = UDim.new(0, 10)})
+    Create("UIStroke", {Parent = Main, Color = Color3.fromRGB(40, 40, 40), Thickness = 1.2})
     
-    local TopBar = Create("Frame", {
-        Parent = Main, Size = UDim2.new(1, 0, 0, 35), BackgroundColor3 = CONFIG.Secondary
+    -- Sidebar Area
+    local Sidebar = Create("Frame", {
+        Name = "Sidebar", Parent = Main, BackgroundColor3 = CONFIG.SidebarColor,
+        Size = UDim2.new(0, 140, 1, 0), Position = UDim2.new(0, 0, 0, 0)
     })
-    Create("UICorner", {Parent = TopBar, CornerRadius = UDim.new(0, 8)})
+    Create("UICorner", {Parent = Sidebar, CornerRadius = UDim.new(0, 10)})
     
-    Create("TextLabel", {
-        Parent = TopBar, Text = CONFIG.Name, Font = Enum.Font.GothamBold, TextSize = 14,
-        TextColor3 = CONFIG.Text, BackgroundTransparency = 1,
-        Position = UDim2.new(0, 15, 0, 0), Size = UDim2.new(0, 200, 1, 0), TextXAlignment = 0
+    local Title = Create("TextLabel", {
+        Parent = Sidebar, Text = CONFIG.Name, Font = Enum.Font.GothamBold, TextSize = 14,
+        TextColor3 = CONFIG.Accent, BackgroundTransparency = 1,
+        Position = UDim2.new(0, 0, 0, 15), Size = UDim2.new(1, 0, 0, 30)
     })
 
-    -- RESET KEY BUTTON (Inside Main Hub)
+    -- CONTENT AREA
+    local Content = Create("Frame", {
+        Name = "Content", Parent = Main, BackgroundTransparency = 1,
+        Position = UDim2.new(0, 150, 0, 15), Size = UDim2.new(1, -165, 1, -30)
+    })
+
+    -- THE RESET BUTTON (Now clearly visible in Sidebar)
     local ResetBtn = Create("TextButton", {
-        Parent = Main, Text = "Reset Key / Logout", Font = Enum.Font.GothamMedium,
-        TextColor3 = Color3.fromRGB(255, 100, 100), BackgroundColor3 = Color3.fromRGB(30, 20, 20),
-        Size = UDim2.new(0, 140, 0, 30), Position = UDim2.new(1, -150, 0, 45)
+        Parent = Sidebar, Text = "Reset Key", Font = Enum.Font.GothamMedium,
+        TextColor3 = Color3.fromRGB(255, 100, 100), BackgroundColor3 = Color3.fromRGB(35, 25, 25),
+        Size = UDim2.new(0, 110, 0, 30), Position = UDim2.new(0.5, -55, 1, -45),
+        ZIndex = 5
     })
     Create("UICorner", {Parent = ResetBtn, CornerRadius = UDim.new(0, 6)})
-    Create("UIStroke", {Parent = ResetBtn, Color = Color3.fromRGB(60, 30, 30)})
+    Create("UIStroke", {Parent = ResetBtn, Color = Color3.fromRGB(80, 40, 40), Thickness = 1})
 
     ResetBtn.MouseButton1Click:Connect(function()
         ResetKey()
+        print("Key Reset. Re-execute script.")
     end)
 
     MakeWindow(Main)
     
-    -- Animation In
+    -- Open Animation
     Main.Size = UDim2.new(0, 0, 0, 0)
-    Tween(Main, {Size = UDim2.new(0, 500, 0, 300)})
+    Tween(Main, {Size = UDim2.new(0, 550, 0, 350)})
 end
 
 --// KEY SYSTEM
 local function InitKeySystem()
-    -- Check for save first
     if GetSavedKey() == CONFIG.Key then return OpenMainHub() end
 
     local KeyFrame = Create("Frame", {
@@ -161,7 +167,7 @@ local function InitKeySystem()
         Size = UDim2.new(0, 320, 0, 220), Position = UDim2.new(0.5, -160, 0.5, -110)
     })
     Create("UICorner", {Parent = KeyFrame, CornerRadius = UDim.new(0, 8)})
-    Create("UIStroke", {Parent = KeyFrame, Color = Color3.fromRGB(40,40,40), Thickness = 1.5})
+    Create("UIStroke", {Parent = KeyFrame, Color = Color3.fromRGB(45, 45, 45), Thickness = 1.5})
 
     Create("TextLabel", {
         Parent = KeyFrame, Text = "AUTHENTICATION", Font = Enum.Font.GothamBold,
@@ -170,12 +176,13 @@ local function InitKeySystem()
     })
 
     local Input = Create("TextBox", {
-        Parent = KeyFrame, PlaceholderText = "Enter Access Key...", Text = "",
+        Parent = KeyFrame, PlaceholderText = "Enter Key...", Text = "",
         BackgroundColor3 = CONFIG.Secondary, TextColor3 = CONFIG.Text,
         Font = Enum.Font.Gotham, TextSize = 14, Size = UDim2.new(0, 260, 0, 35),
         Position = UDim2.new(0.5, -130, 0.4, 0)
     })
     Create("UICorner", {Parent = Input, CornerRadius = UDim.new(0, 6)})
+    Create("UIStroke", {Parent = Input, Color = Color3.fromRGB(50, 50, 50)})
 
     local VerifyBtn = Create("TextButton", {
         Parent = KeyFrame, Text = "Verify", Font = Enum.Font.GothamBold,
@@ -191,7 +198,6 @@ local function InitKeySystem()
     })
     Create("UICorner", {Parent = GetBtn, CornerRadius = UDim.new(0, 6)})
 
-    -- REQUESTED TEXT
     Create("TextLabel", {
         Parent = KeyFrame, Text = "the key is 100% free on the Discord",
         Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = CONFIG.DarkText,
