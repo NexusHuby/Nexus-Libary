@@ -34,7 +34,7 @@ local THEME = {
 local Icons = {}
 task.spawn(function()
     local success, result = pcall(function()
-        return loadstring(game:HttpGet("https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/Nexus-Libary/NexusIcons.lua"))()
+        return loadstring(game:HttpGet(""https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/refs/heads/main/Nexus-Libary/NexusIcons.lua""))()
     end)
     if success and type(result) == "table" then Icons = result end
 end)
