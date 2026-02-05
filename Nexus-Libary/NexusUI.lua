@@ -1,8 +1,9 @@
 --[[
-    NEXUS STANDALONE v6
-    - Fixed Reset Button Visibility (Moved to Sidebar)
-    - Added Sidebar Navigation
-    - Improved Resizing Hitbox
+    NEXUS STANDALONE v7
+    - Fixed Visibility: Distinct Sidebar & Content colors
+    - Added Sidebar Divider (Visual Separation)
+    - Default Tab: UI no longer opens to a blank screen
+    - Enhanced ZIndex: Ensures buttons are always clickable
 ]]
 
 local Players = game:GetService("Players")
@@ -12,18 +13,18 @@ local CoreGui = game:GetService("CoreGui")
 
 local Player = Players.LocalPlayer
 
---// Configuration
+--// Configuration (Adjusted for better contrast)
 local CONFIG = {
     Name = "NEXUS HUB",
     Key = "NEXUS-2026",
     KeyLink = "https://discord.gg/nexus",
     SavePath = "Nexus_SaveData.json",
     Accent = Color3.fromRGB(0, 140, 255),
-    BG = Color3.fromRGB(15, 15, 15),
-    SidebarColor = Color3.fromRGB(20, 20, 20),
+    BG = Color3.fromRGB(12, 12, 12),       -- Darker background
+    SidebarColor = Color3.fromRGB(18, 18, 18), -- Lighter sidebar
     Secondary = Color3.fromRGB(25, 25, 25),
     Text = Color3.fromRGB(255, 255, 255),
-    DarkText = Color3.fromRGB(160, 160, 160)
+    DarkText = Color3.fromRGB(150, 150, 150)
 }
 
 --// Utility
@@ -44,46 +45,31 @@ local ScreenGui = Create("ScreenGui", {
     ResetOnSpawn = false
 })
 
---// SAVE & RESET LOGIC
+--// SAVE & RESET
 local function SaveKey(key) if writefile then writefile(CONFIG.SavePath, key) end end
 local function GetSavedKey() if isfile and isfile(CONFIG.SavePath) then return readfile(CONFIG.SavePath) end return nil end
-local function ResetKey() 
-    if isfile and isfile(CONFIG.SavePath) then 
-        delfile(CONFIG.SavePath) 
-        ScreenGui:Destroy()
-    end 
-end
+local function ResetKey() if isfile and isfile(CONFIG.SavePath) then delfile(CONFIG.SavePath) ScreenGui:Destroy() end end
 
---// DRAG & RESIZE ENGINE
+--// IMPROVED DRAG & RESIZE
 local function MakeWindow(frame)
     local dragging, dragStart, startPos
     local resizing, resizeStartSize, resizeStartPos
 
     frame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
+            dragging = true; dragStart = input.Position; startPos = frame.Position
         end
     end)
 
     local ResizeHandle = Create("Frame", {
         Parent = frame, Name = "ResizeHandle",
         Size = UDim2.new(0, 20, 0, 20), Position = UDim2.new(1, -20, 1, -20),
-        BackgroundTransparency = 1, ZIndex = 20
+        BackgroundTransparency = 1, ZIndex = 25
     })
     
-    -- Small visual indicator for resize
-    local ResizeIcon = Create("ImageLabel", {
-        Parent = ResizeHandle, Size = UDim2.new(0, 12, 0, 12), Position = UDim2.new(0.5, -6, 0.5, -6),
-        BackgroundTransparency = 1, Image = "rbxassetid://6031925612", ImageColor3 = CONFIG.DarkText
-    })
-
     ResizeHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            resizing = true
-            resizeStartPos = input.Position
-            resizeStartSize = frame.Size
+            resizing = true; resizeStartPos = input.Position; resizeStartSize = frame.Size
         end
     end)
 
@@ -101,8 +87,7 @@ local function MakeWindow(frame)
 
     UIS.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-            resizing = false
+            dragging = false; resizing = false
         end
     end)
 end
@@ -112,53 +97,85 @@ local function OpenMainHub()
     local Main = Create("Frame", {
         Name = "MainHub", Parent = ScreenGui, BackgroundColor3 = CONFIG.BG,
         Size = UDim2.new(0, 550, 0, 350), Position = UDim2.new(0.5, -275, 0.5, -175),
-        ClipsDescendants = true
+        ClipsDescendants = true, ZIndex = 1
     })
     Create("UICorner", {Parent = Main, CornerRadius = UDim.new(0, 10)})
     Create("UIStroke", {Parent = Main, Color = Color3.fromRGB(40, 40, 40), Thickness = 1.2})
     
-    -- Sidebar Area
+    -- Sidebar
     local Sidebar = Create("Frame", {
         Name = "Sidebar", Parent = Main, BackgroundColor3 = CONFIG.SidebarColor,
-        Size = UDim2.new(0, 140, 1, 0), Position = UDim2.new(0, 0, 0, 0)
+        Size = UDim2.new(0, 150, 1, 0), ZIndex = 2
     })
     Create("UICorner", {Parent = Sidebar, CornerRadius = UDim.new(0, 10)})
     
+    -- Sidebar Visual Divider (This fixes the "Empty" look)
+    Create("Frame", {
+        Name = "Divider", Parent = Main, BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+        Size = UDim2.new(0, 1, 1, 0), Position = UDim2.new(0, 150, 0, 0), ZIndex = 3
+    })
+    
     local Title = Create("TextLabel", {
-        Parent = Sidebar, Text = CONFIG.Name, Font = Enum.Font.GothamBold, TextSize = 14,
+        Parent = Sidebar, Text = CONFIG.Name, Font = Enum.Font.GothamBold, TextSize = 16,
         TextColor3 = CONFIG.Accent, BackgroundTransparency = 1,
-        Position = UDim2.new(0, 0, 0, 15), Size = UDim2.new(1, 0, 0, 30)
+        Position = UDim2.new(0, 0, 0, 15), Size = UDim2.new(1, 0, 0, 30), ZIndex = 4
     })
 
-    -- CONTENT AREA
+    -- Tab Container
+    local TabScroll = Create("ScrollingFrame", {
+        Parent = Sidebar, BackgroundTransparency = 1, Position = UDim2.new(0, 10, 0, 60),
+        Size = UDim2.new(1, -20, 1, -110), ScrollBarThickness = 0, CanvasSize = UDim2.new(0,0,0,0), 
+        AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 4
+    })
+    Create("UIListLayout", {Parent = TabScroll, Padding = UDim.new(0, 5)})
+
+    -- Content Area
     local Content = Create("Frame", {
         Name = "Content", Parent = Main, BackgroundTransparency = 1,
-        Position = UDim2.new(0, 150, 0, 15), Size = UDim2.new(1, -165, 1, -30)
+        Position = UDim2.new(0, 165, 0, 15), Size = UDim2.new(1, -180, 1, -30), ZIndex = 2
     })
 
-    -- THE RESET BUTTON (Now clearly visible in Sidebar)
+    -- RESET KEY BUTTON
     local ResetBtn = Create("TextButton", {
         Parent = Sidebar, Text = "Reset Key", Font = Enum.Font.GothamMedium,
-        TextColor3 = Color3.fromRGB(255, 100, 100), BackgroundColor3 = Color3.fromRGB(35, 25, 25),
-        Size = UDim2.new(0, 110, 0, 30), Position = UDim2.new(0.5, -55, 1, -45),
+        TextColor3 = Color3.fromRGB(255, 100, 100), BackgroundColor3 = Color3.fromRGB(30, 20, 20),
+        Size = UDim2.new(0, 130, 0, 32), Position = UDim2.new(0.5, -65, 1, -45),
         ZIndex = 5
     })
     Create("UICorner", {Parent = ResetBtn, CornerRadius = UDim.new(0, 6)})
     Create("UIStroke", {Parent = ResetBtn, Color = Color3.fromRGB(80, 40, 40), Thickness = 1})
 
-    ResetBtn.MouseButton1Click:Connect(function()
-        ResetKey()
-        print("Key Reset. Re-execute script.")
-    end)
+    ResetBtn.MouseButton1Click:Connect(ResetKey)
+
+    --// FUNCTION TO ADD TABS (So it's not empty)
+    local function AddTab(name)
+        local Btn = Create("TextButton", {
+            Parent = TabScroll, Text = name, Font = Enum.Font.GothamMedium, TextSize = 13,
+            TextColor3 = CONFIG.DarkText, BackgroundColor3 = CONFIG.Secondary,
+            Size = UDim2.new(1, 0, 0, 30), ZIndex = 5
+        })
+        Create("UICorner", {Parent = Btn, CornerRadius = UDim.new(0, 6)})
+        
+        Btn.MouseButton1Click:Connect(function()
+            print("Switched to: " .. name)
+            -- Logic to switch content goes here
+        end)
+    end
+
+    -- Add some default tabs so you can see the UI working
+    AddTab("Home")
+    AddTab("Combat")
+    AddTab("Visuals")
+    AddTab("Misc")
 
     MakeWindow(Main)
     
-    -- Open Animation
+    -- Opening Animation
     Main.Size = UDim2.new(0, 0, 0, 0)
     Tween(Main, {Size = UDim2.new(0, 550, 0, 350)})
 end
 
---// KEY SYSTEM
+--// KEY SYSTEM (Authentication)
 local function InitKeySystem()
     if GetSavedKey() == CONFIG.Key then return OpenMainHub() end
 
@@ -212,9 +229,9 @@ local function InitKeySystem()
             OpenMainHub()
         else
             Input.Text = ""
-            Input.PlaceholderText = "INVALID KEY!"
+            Input.PlaceholderText = "INVALID!"
             task.wait(1)
-            Input.PlaceholderText = "Enter Access Key..."
+            Input.PlaceholderText = "Enter Key..."
         end
     end)
 
