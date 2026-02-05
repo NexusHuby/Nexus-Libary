@@ -1,428 +1,740 @@
+--[[
+   KEY SYSTEM GUI - Paste this ENTIRE script into a LocalScript in StarterPlayerScripts
+   Roblox Lua Key System with Discord Promo, Draggable UI, and Minimize/Restore functionality
+--]]
+
 -- Services
+local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local UIS = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- ScreenGui Setup
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.DisplayOrder = 999999999
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Utility: Draggable Function
-local function MakeDraggable(Frame, DragPart)
-    DragPart = DragPart or Frame
-    local dragging = false
-    local dragInput, dragStart, startPos
-
-    DragPart.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = Frame.Position
-
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-
-    DragPart.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            dragInput = input
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input == dragInput then
-            local delta = input.Position - dragStart
-            Frame.Position = UDim2.new(
-                startPos.X.Scale,
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale,
-                startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-end
-
--- Utility: Button Hover Tween
-local function ApplyHoverTween(Button, NormalProps, HoverProps)
-    local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad)
-    local hoverTween
-
-    Button.MouseEnter:Connect(function()
-        if hoverTween then hoverTween:Cancel() end
-        hoverTween = TweenService:Create(Button, tweenInfo, HoverProps)
-        hoverTween:Play()
-    end)
-
-    Button.MouseLeave:Connect(function()
-        if hoverTween then hoverTween:Cancel() end
-        hoverTween = TweenService:Create(Button, tweenInfo, NormalProps)
-        hoverTween:Play()
-    end)
-end
-
--- Stage One: Authentication Layer
-local AuthFrame = Instance.new("Frame")
-AuthFrame.Size = UDim2.fromOffset(320, 220)
-AuthFrame.Position = UDim2.new(0.5, -160, 0.5, -110)
-AuthFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-AuthFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-AuthFrame.BackgroundTransparency = 0.08
-AuthFrame.Visible = true
-AuthFrame.Parent = ScreenGui
-
-local AuthCorner = Instance.new("UICorner")
-AuthCorner.CornerRadius = UDim.new(0, 12)
-AuthCorner.Parent = AuthFrame
-
-local AuthStroke = Instance.new("UIStroke")
-AuthStroke.Thickness = 1.5
-AuthStroke.Color = Color3.fromRGB(0, 140, 255)
-AuthStroke.Parent = AuthFrame
-
-local AuthTitle = Instance.new("TextLabel")
-AuthTitle.Size = UDim2.new(1, 0, 0, 60)
-AuthTitle.Position = UDim2.new(0, 0, 0, 10)
-AuthTitle.BackgroundTransparency = 1
-AuthTitle.Text = "AUTHENTICATION"
-AuthTitle.Font = Enum.Font.GothamBold
-AuthTitle.TextSize = 26
-AuthTitle.TextColor3 = Color3.new(1, 1, 1)
-AuthTitle.Parent = AuthFrame
-
-local KeyBox = Instance.new("TextBox")
-KeyBox.Size = UDim2.new(0.8, 0, 0, 40)
-KeyBox.Position = UDim2.new(0.1, 0, 0.4, 0)
-KeyBox.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-KeyBox.BackgroundTransparency = 0.08
-KeyBox.PlaceholderText = "Enter License Key..."
-KeyBox.Text = ""
-KeyBox.Font = Enum.Font.Gotham
-KeyBox.TextSize = 16
-KeyBox.TextColor3 = Color3.new(1, 1, 1)
-KeyBox.ClearTextOnFocus = false
-KeyBox.Parent = AuthFrame
-
-local KeyBoxCorner = Instance.new("UICorner")
-KeyBoxCorner.CornerRadius = UDim.new(0, 8)
-KeyBoxCorner.Parent = KeyBox
-
-local KeyBoxStroke = Instance.new("UIStroke")
-KeyBoxStroke.Thickness = 1
-KeyBoxStroke.Color = Color3.new(1, 1, 1)
-KeyBoxStroke.Parent = KeyBox
-
-local VerifyButton = Instance.new("TextButton")
-VerifyButton.Size = UDim2.new(0.8, 0, 0, 40)
-VerifyButton.Position = UDim2.new(0.1, 0, 0.65, 0)
-VerifyButton.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-VerifyButton.BackgroundTransparency = 0.08
-VerifyButton.Text = "Verify Access"
-VerifyButton.Font = Enum.Font.GothamBold
-VerifyButton.TextSize = 16
-VerifyButton.TextColor3 = Color3.new(1, 1, 1)
-VerifyButton.AutoButtonColor = false
-VerifyButton.Parent = AuthFrame
-
-local VerifyCorner = Instance.new("UICorner")
-VerifyCorner.CornerRadius = UDim.new(0, 8)
-VerifyCorner.Parent = VerifyButton
-
-local VerifyStroke = Instance.new("UIStroke")
-VerifyStroke.Thickness = 1.5
-VerifyStroke.Color = Color3.fromRGB(0, 140, 255)
-VerifyStroke.Parent = VerifyButton
-
-local GlossSheen = Instance.new("Frame")
-GlossSheen.Size = UDim2.new(1, 0, 1, 0)
-GlossSheen.BackgroundColor3 = Color3.new(1, 1, 1)
-GlossSheen.BackgroundTransparency = 0
-GlossSheen.ZIndex = 0
-GlossSheen.Parent = VerifyButton
-
-local SheenGradient = Instance.new("UIGradient")
-SheenGradient.Color = ColorSequence.new(Color3.new(1, 1, 1))
-SheenGradient.Transparency = NumberSequence.new{
-    NumberSequenceKeypoint.new(0, 0),
-    NumberSequenceKeypoint.new(1, 1)
+-- Configuration
+local CONFIG = {
+   DISCORD_LINK = "YOUR_DISCORD_INVITE_HERE", -- Replace with actual Discord invite
+   VALID_KEY = "FREE-2024-KEY",
+   THEME = {
+       PRIMARY = Color3.fromRGB(88, 101, 242),    -- Discord blurple
+       SECONDARY = Color3.fromRGB(47, 49, 54),     -- Dark gray
+       ACCENT = Color3.fromRGB(237, 66, 69),       -- Red
+       SUCCESS = Color3.fromRGB(59, 165, 93),      -- Green
+       TEXT = Color3.fromRGB(255, 255, 255),
+       TEXT_DIM = Color3.fromRGB(185, 187, 190),
+       BACKGROUND = Color3.fromRGB(32, 34, 37)
+   }
 }
-SheenGradient.Rotation = 90
-SheenGradient.Parent = GlossSheen
 
-local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Size = UDim2.new(0.8, 0, 0, 30)
-StatusLabel.Position = UDim2.new(0.1, 0, 0.85, 0)
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "Status: Ready"
-StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.TextSize = 14
-StatusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-StatusLabel.Parent = AuthFrame
+-- GUI Creation
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "KeySystemV2"
+ScreenGui.Parent = PlayerGui
+ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 999
 
-ApplyHoverTween(VerifyButton, {BackgroundTransparency = 0.08}, {BackgroundTransparency = 0.2})
-
--- Stage Two: Primary Command Hub
+-- MAIN FRAME (Key System)
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.fromOffset(750, 500)
-MainFrame.Position = UDim2.new(0.5, -375, 0.5, -250)
-MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-MainFrame.BackgroundTransparency = 0.08
-MainFrame.Visible = false
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 450, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -225, 0.5, -175)
+MainFrame.BackgroundColor3 = CONFIG.THEME.BACKGROUND
+MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
 
+-- Rounded corners for main frame
 local MainCorner = Instance.new("UICorner")
 MainCorner.CornerRadius = UDim.new(0, 12)
 MainCorner.Parent = MainFrame
 
-local MainStroke = Instance.new("UIStroke")
-MainStroke.Thickness = 1.5
-MainStroke.Color = Color3.fromRGB(0, 140, 255)
-MainStroke.Parent = MainFrame
+-- Shadow
+local Shadow = Instance.new("ImageLabel")
+Shadow.Name = "Shadow"
+Shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+Shadow.BackgroundTransparency = 1
+Shadow.Position = UDim2.new(0.5, 0, 0.5, 0)
+Shadow.Size = UDim2.new(1, 30, 1, 30)
+Shadow.Image = "rbxassetid://6015897843"
+Shadow.ImageColor3 = Color3.new(0, 0, 0)
+Shadow.ImageTransparency = 0.5
+Shadow.ScaleType = Enum.ScaleType.Slice
+Shadow.SliceCenter = Rect.new(49, 49, 450, 450)
+Shadow.ZIndex = -1
+Shadow.Parent = MainFrame
 
-local Header = Instance.new("Frame")
-Header.Size = UDim2.new(1, 0, 0, 55)
-Header.BackgroundTransparency = 1
-Header.Parent = MainFrame
+-- TOP BAR
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Size = UDim2.new(1, 0, 0, 40)
+TopBar.BackgroundColor3 = CONFIG.THEME.SECONDARY
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
 
-local HubTitle = Instance.new("TextLabel")
-HubTitle.Size = UDim2.new(0, 200, 1, 0)
-HubTitle.Position = UDim2.new(0, 20, 0, 0)
-HubTitle.BackgroundTransparency = 1
-HubTitle.Text = "NEXUS HUB"
-HubTitle.Font = Enum.Font.GothamBold
-HubTitle.TextSize = 22
-HubTitle.TextColor3 = Color3.fromRGB(0, 140, 255)
-HubTitle.TextXAlignment = Enum.TextXAlignment.Left
-HubTitle.Parent = Header
+local TopBarCorner = Instance.new("UICorner")
+TopBarCorner.CornerRadius = UDim.new(0, 12)
+TopBarCorner.Parent = TopBar
 
-local Divider = Instance.new("Frame")
-Divider.Size = UDim2.new(1, 0, 0, 1)
-Divider.Position = UDim2.new(0, 0, 1, 0)
-Divider.BackgroundColor3 = Color3.new(1, 1, 1)
-Divider.Parent = Header
+local TopBarFix = Instance.new("Frame")
+TopBarFix.Size = UDim2.new(1, 0, 0, 10)
+TopBarFix.Position = UDim2.new(0, 0, 1, -10)
+TopBarFix.BackgroundColor3 = CONFIG.THEME.SECONDARY
+TopBarFix.BorderSizePixel = 0
+TopBarFix.Parent = TopBar
 
-local DividerGradient = Instance.new("UIGradient")
-DividerGradient.Transparency = NumberSequence.new{
-    NumberSequenceKeypoint.new(0, 1),
-    NumberSequenceKeypoint.new(0.5, 0),
-    NumberSequenceKeypoint.new(1, 1)
-}
-DividerGradient.Parent = Divider
+-- Title
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(0, 200, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "🔐 KEY SYSTEM"
+Title.TextColor3 = CONFIG.THEME.TEXT
+Title.TextSize = 18
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TopBar
 
-local CloseButton = Instance.new("TextButton")
-CloseButton.Size = UDim2.fromOffset(40, 30)
-CloseButton.Position = UDim2.new(1, -50, 0, 12)
-CloseButton.BackgroundTransparency = 1
-CloseButton.Text = "X"
-CloseButton.Font = Enum.Font.GothamBold
-CloseButton.TextSize = 18
-CloseButton.TextColor3 = Color3.fromRGB(255, 100, 100)
-CloseButton.Parent = Header
+-- Close Button (X)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Name = "CloseBtn"
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -10, 0.5, 0)
+CloseBtn.AnchorPoint = Vector2.new(1, 0.5)
+CloseBtn.BackgroundColor3 = CONFIG.THEME.ACCENT
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = CONFIG.THEME.TEXT
+CloseBtn.TextSize = 16
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Parent = TopBar
 
-local MinimizeButton = Instance.new("TextButton")
-MinimizeButton.Size = UDim2.fromOffset(40, 30)
-MinimizeButton.Position = UDim2.new(1, -100, 0, 12)
-MinimizeButton.BackgroundTransparency = 1
-MinimizeButton.Text = "-"
-MinimizeButton.Font = Enum.Font.GothamBold
-MinimizeButton.TextSize = 24
-MinimizeButton.TextColor3 = Color3.new(1, 1, 1)
-MinimizeButton.Parent = Header
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = CloseBtn
 
-ApplyHoverTween(CloseButton, {TextColor3 = Color3.fromRGB(255, 100, 100)}, {TextColor3 = Color3.new(1, 1, 1), BackgroundColor3 = Color3.fromRGB(255, 50, 50), BackgroundTransparency = 0.7})
-ApplyHoverTween(MinimizeButton, {TextColor3 = Color3.new(1, 1, 1)}, {TextColor3 = Color3.fromRGB(0, 140, 255)})
+-- Minimize Button (-)
+local MinBtn = Instance.new("TextButton")
+MinBtn.Name = "MinBtn"
+MinBtn.Size = UDim2.new(0, 30, 0, 30)
+MinBtn.Position = UDim2.new(1, -45, 0.5, 0)
+MinBtn.AnchorPoint = Vector2.new(1, 0.5)
+MinBtn.BackgroundColor3 = CONFIG.THEME.PRIMARY
+MinBtn.Text = "-"
+MinBtn.TextColor3 = CONFIG.THEME.TEXT
+MinBtn.TextSize = 20
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.Parent = TopBar
 
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 6)
+MinCorner.Parent = MinBtn
+
+-- CONTENT AREA
+local Content = Instance.new("Frame")
+Content.Name = "Content"
+Content.Size = UDim2.new(1, -40, 1, -60)
+Content.Position = UDim2.new(0, 20, 0, 50)
+Content.BackgroundTransparency = 1
+Content.Parent = MainFrame
+
+-- Discord Promo Section
+local PromoFrame = Instance.new("Frame")
+PromoFrame.Name = "PromoFrame"
+PromoFrame.Size = UDim2.new(1, 0, 0, 80)
+PromoFrame.BackgroundColor3 = CONFIG.THEME.PRIMARY
+PromoFrame.BorderSizePixel = 0
+PromoFrame.Parent = Content
+
+local PromoCorner = Instance.new("UICorner")
+PromoCorner.CornerRadius = UDim.new(0, 10)
+PromoCorner.Parent = PromoFrame
+
+local DiscordIcon = Instance.new("ImageLabel")
+DiscordIcon.Name = "DiscordIcon"
+DiscordIcon.Size = UDim2.new(0, 50, 0, 50)
+DiscordIcon.Position = UDim2.new(0, 15, 0.5, 0)
+DiscordIcon.AnchorPoint = Vector2.new(0, 0.5)
+DiscordIcon.BackgroundTransparency = 1
+DiscordIcon.Image = "rbxassetid://3926307971" -- Discord-like icon
+DiscordIcon.ImageRectOffset = Vector2.new(724, 724)
+DiscordIcon.ImageRectSize = Vector2.new(72, 72)
+DiscordIcon.Parent = PromoFrame
+
+local PromoText = Instance.new("TextLabel")
+PromoText.Name = "PromoText"
+PromoText.Size = UDim2.new(1, -80, 0, 20)
+PromoText.Position = UDim2.new(0, 75, 0.3, 0)
+PromoText.BackgroundTransparency = 1
+PromoText.Text = "🎉 KEY IS 100% FREE!"
+PromoText.TextColor3 = CONFIG.THEME.TEXT
+PromoText.TextSize = 16
+PromoText.Font = Enum.Font.GothamBold
+PromoText.TextXAlignment = Enum.TextXAlignment.Left
+PromoText.Parent = PromoFrame
+
+local SubPromoText = Instance.new("TextLabel")
+SubPromoText.Name = "SubPromoText"
+SubPromoText.Size = UDim2.new(1, -80, 0, 20)
+SubPromoText.Position = UDim2.new(0, 75, 0.6, 0)
+SubPromoText.BackgroundTransparency = 1
+SubPromoText.Text = "Get your key on our Discord server"
+SubPromoText.TextColor3 = Color3.fromRGB(220, 221, 222)
+SubPromoText.TextSize = 14
+SubPromoText.Font = Enum.Font.Gotham
+SubPromoText.TextXAlignment = Enum.TextXAlignment.Left
+SubPromoText.Parent = PromoFrame
+
+-- Key Input Section
+local InputFrame = Instance.new("Frame")
+InputFrame.Name = "InputFrame"
+InputFrame.Size = UDim2.new(1, 0, 0, 100)
+InputFrame.Position = UDim2.new(0, 0, 0, 95)
+InputFrame.BackgroundTransparency = 1
+InputFrame.Parent = Content
+
+local KeyLabel = Instance.new("TextLabel")
+KeyLabel.Name = "KeyLabel"
+KeyLabel.Size = UDim2.new(1, 0, 0, 20)
+KeyLabel.BackgroundTransparency = 1
+KeyLabel.Text = "ENTER YOUR KEY"
+KeyLabel.TextColor3 = CONFIG.THEME.TEXT_DIM
+KeyLabel.TextSize = 12
+KeyLabel.Font = Enum.Font.GothamBold
+KeyLabel.TextXAlignment = Enum.TextXAlignment.Left
+KeyLabel.Parent = InputFrame
+
+local KeyBox = Instance.new("TextBox")
+KeyBox.Name = "KeyBox"
+KeyBox.Size = UDim2.new(1, 0, 0, 45)
+KeyBox.Position = UDim2.new(0, 0, 0, 25)
+KeyBox.BackgroundColor3 = CONFIG.THEME.SECONDARY
+KeyBox.Text = ""
+KeyBox.PlaceholderText = "Paste key here..."
+KeyBox.TextColor3 = CONFIG.THEME.TEXT
+KeyBox.PlaceholderColor3 = CONFIG.THEME.TEXT_DIM
+KeyBox.TextSize = 14
+KeyBox.Font = Enum.Font.Gotham
+KeyBox.ClearTextOnFocus = false
+KeyBox.Parent = InputFrame
+
+local KeyCorner = Instance.new("UICorner")
+KeyCorner.CornerRadius = UDim.new(0, 8)
+KeyCorner.Parent = KeyBox
+
+local KeyStroke = Instance.new("UIStroke")
+KeyStroke.Color = CONFIG.THEME.PRIMARY
+KeyStroke.Thickness = 1
+KeyStroke.Transparency = 0.8
+KeyStroke.Parent = KeyBox
+
+-- Status Label
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Name = "StatusLabel"
+StatusLabel.Size = UDim2.new(1, 0, 0, 20)
+StatusLabel.Position = UDim2.new(0, 0, 0, 75)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = ""
+StatusLabel.TextColor3 = CONFIG.THEME.ACCENT
+StatusLabel.TextSize = 12
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.Parent = InputFrame
+
+-- Buttons Container
+local ButtonFrame = Instance.new("Frame")
+ButtonFrame.Name = "ButtonFrame"
+ButtonFrame.Size = UDim2.new(1, 0, 0, 50)
+ButtonFrame.Position = UDim2.new(0, 0, 0, 210)
+ButtonFrame.BackgroundTransparency = 1
+ButtonFrame.Parent = Content
+
+-- Get Key Button
+local GetKeyBtn = Instance.new("TextButton")
+GetKeyBtn.Name = "GetKeyBtn"
+GetKeyBtn.Size = UDim2.new(0.48, 0, 1, 0)
+GetKeyBtn.BackgroundColor3 = CONFIG.THEME.SECONDARY
+GetKeyBtn.Text = "📋 Get Key"
+GetKeyBtn.TextColor3 = CONFIG.THEME.TEXT
+GetKeyBtn.TextSize = 14
+GetKeyBtn.Font = Enum.Font.GothamBold
+GetKeyBtn.Parent = ButtonFrame
+
+local GetKeyCorner = Instance.new("UICorner")
+GetKeyCorner.CornerRadius = UDim.new(0, 8)
+GetKeyCorner.Parent = GetKeyBtn
+
+local GetKeyStroke = Instance.new("UIStroke")
+GetKeyStroke.Color = CONFIG.THEME.TEXT_DIM
+GetKeyStroke.Thickness = 1
+GetKeyStroke.Transparency = 0.5
+GetKeyStroke.Parent = GetKeyBtn
+
+-- Verify Button
+local VerifyBtn = Instance.new("TextButton")
+VerifyBtn.Name = "VerifyBtn"
+VerifyBtn.Size = UDim2.new(0.48, 0, 1, 0)
+VerifyBtn.Position = UDim2.new(0.52, 0, 0, 0)
+VerifyBtn.BackgroundColor3 = CONFIG.THEME.SUCCESS
+VerifyBtn.Text = "✓ Verify"
+VerifyBtn.TextColor3 = CONFIG.THEME.TEXT
+VerifyBtn.TextSize = 14
+VerifyBtn.Font = Enum.Font.GothamBold
+VerifyBtn.Parent = ButtonFrame
+
+local VerifyCorner = Instance.new("UICorner")
+VerifyCorner.CornerRadius = UDim.new(0, 8)
+VerifyCorner.Parent = VerifyBtn
+
+-- Minimized Button (Floating Toggle)
+local MinimizedBtn = Instance.new("TextButton")
+MinimizedBtn.Name = "MinimizedBtn"
+MinimizedBtn.Size = UDim2.new(0, 50, 0, 50)
+MinimizedBtn.Position = UDim2.new(0, 20, 0.5, 0)
+MinimizedBtn.BackgroundColor3 = CONFIG.THEME.PRIMARY
+MinimizedBtn.Text = "🔐"
+MinimizedBtn.TextSize = 24
+MinimizedBtn.Font = Enum.Font.GothamBold
+MinimizedBtn.Visible = false
+MinimizedBtn.Parent = ScreenGui
+
+local MinimizedCorner = Instance.new("UICorner")
+MinimizedCorner.CornerRadius = UDim.new(1, 0) -- Circle
+MinimizedCorner.Parent = MinimizedBtn
+
+local MinimizedStroke = Instance.new("UIStroke")
+MinimizedStroke.Color = CONFIG.THEME.TEXT
+MinimizedStroke.Thickness = 2
+MinimizedStroke.Parent = MinimizedBtn
+
+local MinimizedShadow = Instance.new("ImageLabel")
+MinimizedShadow.Name = "Shadow"
+MinimizedShadow.AnchorPoint = Vector2.new(0.5, 0.5)
+MinimizedShadow.BackgroundTransparency = 1
+MinimizedShadow.Position = UDim2.new(0.5, 0, 0.5, 0)
+MinimizedShadow.Size = UDim2.new(1, 20, 1, 20)
+MinimizedShadow.Image = "rbxassetid://6015897843"
+MinimizedShadow.ImageColor3 = Color3.new(0, 0, 0)
+MinimizedShadow.ImageTransparency = 0.6
+MinimizedShadow.ScaleType = Enum.ScaleType.Slice
+MinimizedShadow.SliceCenter = Rect.new(49, 49, 450, 450)
+MinimizedShadow.ZIndex = -1
+MinimizedShadow.Parent = MinimizedBtn
+
+-- MAIN PANEL (After verification - Design this however you want!)
+local MainPanel = Instance.new("Frame")
+MainPanel.Name = "MainPanel"
+MainPanel.Size = UDim2.new(0, 600, 0, 400)
+MainPanel.Position = UDim2.new(0.5, -300, 0.5, -200)
+MainPanel.BackgroundColor3 = CONFIG.THEME.BACKGROUND
+MainPanel.BorderSizePixel = 0
+MainPanel.Visible = false
+MainPanel.Parent = ScreenGui
+
+local PanelCorner = Instance.new("UICorner")
+PanelCorner.CornerRadius = UDim.new(0, 16)
+PanelCorner.Parent = MainPanel
+
+local PanelShadow = Instance.new("ImageLabel")
+PanelShadow.Name = "Shadow"
+PanelShadow.AnchorPoint = Vector2.new(0.5, 0.5)
+PanelShadow.BackgroundTransparency = 1
+PanelShadow.Position = UDim2.new(0.5, 0, 0.5, 0)
+PanelShadow.Size = UDim2.new(1, 40, 1, 40)
+PanelShadow.Image = "rbxassetid://6015897843"
+PanelShadow.ImageColor3 = Color3.new(0, 0, 0)
+PanelShadow.ImageTransparency = 0.4
+PanelShadow.ScaleType = Enum.ScaleType.Slice
+PanelShadow.SliceCenter = Rect.new(49, 49, 450, 450)
+PanelShadow.ZIndex = -1
+PanelShadow.Parent = MainPanel
+
+-- Panel Top Bar
+local PanelTopBar = Instance.new("Frame")
+PanelTopBar.Name = "TopBar"
+PanelTopBar.Size = UDim2.new(1, 0, 0, 50)
+PanelTopBar.BackgroundColor3 = CONFIG.THEME.PRIMARY
+PanelTopBar.BorderSizePixel = 0
+PanelTopBar.Parent = MainPanel
+
+local PanelTopCorner = Instance.new("UICorner")
+PanelTopCorner.CornerRadius = UDim.new(0, 16)
+PanelTopCorner.Parent = PanelTopBar
+
+local PanelTopFix = Instance.new("Frame")
+PanelTopFix.Size = UDim2.new(1, 0, 0, 15)
+PanelTopFix.Position = UDim2.new(0, 0, 1, -15)
+PanelTopFix.BackgroundColor3 = CONFIG.THEME.PRIMARY
+PanelTopFix.BorderSizePixel = 0
+PanelTopFix.Parent = PanelTopBar
+
+local PanelTitle = Instance.new("TextLabel")
+PanelTitle.Size = UDim2.new(0, 300, 1, 0)
+PanelTitle.Position = UDim2.new(0, 20, 0, 0)
+PanelTitle.BackgroundTransparency = 1
+PanelTitle.Text = "✨ PREMIUM HUB"
+PanelTitle.TextColor3 = CONFIG.THEME.TEXT
+PanelTitle.TextSize = 22
+PanelTitle.Font = Enum.Font.GothamBlack
+PanelTitle.TextXAlignment = Enum.TextXAlignment.Left
+PanelTitle.Parent = PanelTopBar
+
+local PanelClose = Instance.new("TextButton")
+PanelClose.Size = UDim2.new(0, 35, 0, 35)
+PanelClose.Position = UDim2.new(1, -15, 0.5, 0)
+PanelClose.AnchorPoint = Vector2.new(1, 0.5)
+PanelClose.BackgroundColor3 = CONFIG.THEME.ACCENT
+PanelClose.Text = "×"
+PanelClose.TextColor3 = CONFIG.THEME.TEXT
+PanelClose.TextSize = 24
+PanelClose.Font = Enum.Font.GothamBold
+PanelClose.Parent = PanelTopBar
+
+local PanelCloseCorner = Instance.new("UICorner")
+PanelCloseCorner.CornerRadius = UDim.new(0, 8)
+PanelCloseCorner.Parent = PanelClose
+
+local PanelMin = Instance.new("TextButton")
+PanelMin.Size = UDim2.new(0, 35, 0, 35)
+PanelMin.Position = UDim2.new(1, -55, 0.5, 0)
+PanelMin.AnchorPoint = Vector2.new(1, 0.5)
+PanelMin.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+PanelMin.Text = "−"
+PanelMin.TextColor3 = CONFIG.THEME.TEXT
+PanelMin.TextSize = 24
+PanelMin.Font = Enum.Font.GothamBold
+PanelMin.Parent = PanelTopBar
+
+local PanelMinCorner = Instance.new("UICorner")
+PanelMinCorner.CornerRadius = UDim.new(0, 8)
+PanelMinCorner.Parent = PanelMin
+
+-- COOL PANEL CONTENT - Add your features here!
+local PanelContent = Instance.new("Frame")
+PanelContent.Name = "Content"
+PanelContent.Size = UDim2.new(1, -40, 1, -70)
+PanelContent.Position = UDim2.new(0, 20, 0, 60)
+PanelContent.BackgroundTransparency = 1
+PanelContent.Parent = MainPanel
+
+-- Sidebar
 local Sidebar = Instance.new("Frame")
-Sidebar.Size = UDim2.new(0, 110, 1, -55)
-Sidebar.Position = UDim2.new(0, 0, 0, 55)
-Sidebar.BackgroundTransparency = 0.08
-Sidebar.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-Sidebar.Parent = MainFrame
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0, 150, 1, 0)
+Sidebar.BackgroundColor3 = CONFIG.THEME.SECONDARY
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = PanelContent
 
-local SidebarList = Instance.new("UIListLayout")
-SidebarList.Padding = UDim.new(0, 8)
-SidebarList.HorizontalAlignment = Enum.HorizontalAlignment.Center
-SidebarList.VerticalAlignment = Enum.VerticalAlignment.Top
-SidebarList.SortOrder = Enum.SortOrder.LayoutOrder
-SidebarList.Parent = Sidebar
+local SidebarCorner = Instance.new("UICorner")
+SidebarCorner.CornerRadius = UDim.new(0, 12)
+SidebarCorner.Parent = Sidebar
 
-local SidebarPadding = Instance.new("UIPadding")
-SidebarPadding.PaddingTop = UDim.new(0, 15)
-SidebarPadding.Parent = Sidebar
+-- Feature Buttons
+local features = {
+   {name = "Auto Farm", icon = "💰", color = CONFIG.THEME.SUCCESS},
+   {name = "ESP", icon = "👁", color = Color3.fromRGB(255, 170, 0)},
+   {name = "Speed", icon = "⚡", color = Color3.fromRGB(0, 170, 255)},
+   {name = "Fly", icon = "🕊", color = Color3.fromRGB(170, 0, 255)},
+   {name = "Misc", icon = "⚙", color = CONFIG.THEME.TEXT_DIM}
+}
 
-local ContentArea = Instance.new("Frame")
-ContentArea.Size = UDim2.new(1, -110, 1, -55)
-ContentArea.Position = UDim2.new(0, 110, 0, 55)
-ContentArea.BackgroundTransparency = 1
-ContentArea.Parent = MainFrame
-
--- Modular Tab Creation
-local Tabs = {"Home", "Player", "Combat", "Visuals", "Settings"}
-local ContentFrames = {}
-local CurrentTabButton = nil
-
-local function CreateTab(Name)
-    local TabButton = Instance.new("TextButton")
-    TabButton.Size = UDim2.new(1, -20, 0, 24)
-    TabButton.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-    TabButton.BackgroundTransparency = 0.08
-    TabButton.Text = Name
-    TabButton.Font = Enum.Font.GothamBold
-    TabButton.TextSize = 14
-    TabButton.TextColor3 = Color3.new(1, 1, 1)
-    TabButton.AutoButtonColor = false
-    TabButton.Parent = Sidebar
-
-    local TabCorner = Instance.new("UICorner")
-    TabCorner.CornerRadius = UDim.new(0, 12)
-    TabCorner.Parent = TabButton
-
-    local TabGloss = Instance.new("Frame")
-    TabGloss.Size = UDim2.new(1, 0, 0.4, 0)
-    TabGloss.BackgroundColor3 = Color3.new(1, 1, 1)
-    TabGloss.BackgroundTransparency = 0.8
-    TabGloss.Parent = TabButton
-
-    local NormalProps = {BackgroundTransparency = 0.08}
-    local HoverProps = {BackgroundTransparency = 0.25}
-    local ActiveProps = {BackgroundTransparency = 0.15}
-
-    ApplyHoverTween(TabButton, NormalProps, HoverProps)
-
-    local ContentFrame = Instance.new("Frame")
-    ContentFrame.Size = UDim2.new(1, 0, 1, 0)
-    ContentFrame.BackgroundTransparency = 1
-    ContentFrame.Visible = false
-    ContentFrame.Parent = ContentArea
-
-    local Placeholder = Instance.new("TextLabel")
-    Placeholder.Size = UDim2.new(1, 0, 1, 0)
-    Placeholder.BackgroundTransparency = 1
-    Placeholder.Text = Name .. " Section\n\n(Placeholder - Add your features here)"
-    Placeholder.Font = Enum.Font.Gotham
-    Placeholder.TextSize = 20
-    Placeholder.TextColor3 = Color3.fromRGB(180, 180, 180)
-    Placeholder.Parent = ContentFrame
-
-    ContentFrames[Name] = ContentFrame
-
-    TabButton.MouseButton1Click:Connect(function()
-        if CurrentTabButton == TabButton then return end
-
-        if CurrentTabButton then
-            TweenService:Create(CurrentTabButton, TweenInfo.new(0.25, Enum.EasingStyle.Quad), NormalProps):Play()
-            local oldGloss = CurrentTabButton:FindFirstChild("Frame")
-            if oldGloss then
-                TweenService:Create(oldGloss, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundTransparency = 0.8}):Play()
-            end
-            ContentFrames[CurrentTabButton.Text].Visible = false
-        end
-
-        TweenService:Create(TabButton, TweenInfo.new(0.25, Enum.EasingStyle.Quad), ActiveProps):Play()
-        TweenService:Create(TabGloss, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundTransparency = 0.5}):Play()
-        ContentFrames[Name].Visible = true
-        CurrentTabButton = TabButton
-    end)
-
-    return TabButton
+for i, feature in ipairs(features) do
+   local Btn = Instance.new("TextButton")
+   Btn.Name = feature.name.."Btn"
+   Btn.Size = UDim2.new(1, -20, 0, 45)
+   Btn.Position = UDim2.new(0, 10, 0, 10 + (i-1) * 55)
+   Btn.BackgroundColor3 = CONFIG.THEME.BACKGROUND
+   Btn.Text = " "..feature.icon.."  "..feature.name
+   Btn.TextColor3 = CONFIG.THEME.TEXT
+   Btn.TextSize = 14
+   Btn.Font = Enum.Font.GothamBold
+   Btn.TextXAlignment = Enum.TextXAlignment.Left
+   Btn.Parent = Sidebar
+   
+   local BtnCorner = Instance.new("UICorner")
+   BtnCorner.CornerRadius = UDim.new(0, 8)
+   BtnCorner.Parent = Btn
+   
+   -- Hover effect
+   Btn.MouseEnter:Connect(function()
+       TweenService:Create(Btn, TweenInfo.new(0.2), {BackgroundColor3 = feature.color}):Play()
+   end)
+   Btn.MouseLeave:Connect(function()
+       TweenService:Create(Btn, TweenInfo.new(0.2), {BackgroundColor3 = CONFIG.THEME.BACKGROUND}):Play()
+   end)
 end
 
-for _, TabName in ipairs(Tabs) do
-    CreateTab(TabName)
+-- Main Display Area
+local DisplayArea = Instance.new("Frame")
+DisplayArea.Name = "Display"
+DisplayArea.Size = UDim2.new(1, -170, 1, 0)
+DisplayArea.Position = UDim2.new(0, 170, 0, 0)
+DisplayArea.BackgroundColor3 = CONFIG.THEME.SECONDARY
+DisplayArea.BorderSizePixel = 0
+DisplayArea.Parent = PanelContent
+
+local DisplayCorner = Instance.new("UICorner")
+DisplayCorner.CornerRadius = UDim.new(0, 12)
+DisplayCorner.Parent = DisplayArea
+
+local WelcomeText = Instance.new("TextLabel")
+WelcomeText.Size = UDim2.new(1, -40, 0, 50)
+WelcomeText.Position = UDim2.new(0, 20, 0, 20)
+WelcomeText.BackgroundTransparency = 1
+WelcomeText.Text = "Welcome to Premium Hub!"
+WelcomeText.TextColor3 = CONFIG.THEME.TEXT
+WelcomeText.TextSize = 24
+WelcomeText.Font = Enum.Font.GothamBlack
+WelcomeText.TextWrapped = true
+WelcomeText.Parent = DisplayArea
+
+local DescText = Instance.new("TextLabel")
+DescText.Size = UDim2.new(1, -40, 0, 60)
+DescText.Position = UDim2.new(0, 20, 0, 80)
+DescText.BackgroundTransparency = 1
+DescText.Text = "Select a feature from the sidebar to get started. This GUI is fully draggable and customizable!"
+DescText.TextColor3 = CONFIG.THEME.TEXT_DIM
+DescText.TextSize = 14
+DescText.Font = Enum.Font.Gotham
+DescText.TextWrapped = true
+DescText.Parent = DisplayArea
+
+-- Animated particles in display area
+for i = 1, 5 do
+   local Particle = Instance.new("Frame")
+   Particle.Size = UDim2.new(0, 4, 0, 4)
+   Particle.Position = UDim2.new(math.random(), 0, math.random(), 0)
+   Particle.BackgroundColor3 = CONFIG.THEME.PRIMARY
+   Particle.BorderSizePixel = 0
+   Particle.Parent = DisplayArea
+   
+   local PCorner = Instance.new("UICorner")
+   PCorner.CornerRadius = UDim.new(1, 0)
+   PCorner.Parent = Particle
+   
+   -- Animate
+   spawn(function()
+       while wait(math.random(1, 3)) do
+           local newPos = UDim2.new(math.random(), 0, math.random(), 0)
+           TweenService:Create(Particle, TweenInfo.new(math.random(2, 4)), {Position = newPos}):Play()
+       end
+   end)
 end
 
--- Default to Home tab
-task.spawn(function()
-    task.wait() -- Wait one frame for layout to settle
-    for _, child in ipairs(Sidebar:GetChildren()) do
-        if child:IsA("TextButton") and child.Text == "Home" then
-            child.MouseButton1Click:Fire()
-            break
-        end
-    end
+-- FUNCTIONS & LOGIC
+
+-- Dragging Function
+local function makeDraggable(frame, handle)
+   handle = handle or frame
+   local dragging = false
+   local dragInput, mousePos, framePos
+
+   handle.InputBegan:Connect(function(input)
+       if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+           dragging = true
+           mousePos = input.Position
+           framePos = frame.Position
+           
+           input.Changed:Connect(function()
+               if input.UserInputState == Enum.UserInputState.End then
+                   dragging = false
+               end
+           end)
+       end
+   end)
+
+   handle.InputChanged:Connect(function(input)
+       if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+           dragInput = input
+       end
+   end)
+
+   UIS.InputChanged:Connect(function(input)
+       if input == dragInput and dragging then
+           local delta = input.Position - mousePos
+           frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+       end
+   end)
+end
+
+-- Make frames draggable
+makeDraggable(MainFrame, TopBar)
+makeDraggable(MainPanel, PanelTopBar)
+makeDraggable(MinimizedBtn)
+
+-- Animations
+local function tween(object, properties, duration)
+   TweenService:Create(object, TweenInfo.new(duration or 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), properties):Play()
+end
+
+-- Button Hover Effects
+local function setupHover(button, normalColor, hoverColor)
+   button.MouseEnter:Connect(function()
+       tween(button, {BackgroundColor3 = hoverColor}, 0.2)
+   end)
+   button.MouseLeave:Connect(function()
+       tween(button, {BackgroundColor3 = normalColor}, 0.2)
+   end)
+end
+
+setupHover(CloseBtn, CONFIG.THEME.ACCENT, Color3.fromRGB(255, 100, 100))
+setupHover(MinBtn, CONFIG.THEME.PRIMARY, Color3.fromRGB(110, 123, 255))
+setupHover(GetKeyBtn, CONFIG.THEME.SECONDARY, Color3.fromRGB(60, 60, 60))
+setupHover(VerifyBtn, CONFIG.THEME.SUCCESS, Color3.fromRGB(80, 200, 100))
+setupHover(MinimizedBtn, CONFIG.THEME.PRIMARY, Color3.fromRGB(110, 123, 255))
+
+-- Key Box Focus Effect
+KeyBox.Focused:Connect(function()
+   tween(KeyStroke, {Transparency = 0}, 0.2)
+end)
+KeyBox.FocusLost:Connect(function()
+   tween(KeyStroke, {Transparency = 0.8}, 0.2)
 end)
 
--- Toggle Button (Minimized State)
-local ToggleButton = Instance.new("ImageButton")
-ToggleButton.Size = UDim2.fromOffset(45, 45)
-ToggleButton.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-ToggleButton.BackgroundTransparency = 0.08
-ToggleButton.Visible = false
-ToggleButton.Parent = ScreenGui
-
-local ToggleCorner = Instance.new("UICorner")
-ToggleCorner.CornerRadius = UDim.new(0, 10)
-ToggleCorner.Parent = ToggleButton
-
-local ToggleStroke = Instance.new("UIStroke")
-ToggleStroke.Thickness = 1.5
-ToggleStroke.Color = Color3.fromRGB(0, 140, 255)
-ToggleStroke.Parent = ToggleButton
-
-local ToggleLabel = Instance.new("TextLabel")
-ToggleLabel.Size = UDim2.new(1, 0, 1, 0)
-ToggleLabel.BackgroundTransparency = 1
-ToggleLabel.Text = "N"
-ToggleLabel.Font = Enum.Font.GothamBold
-ToggleLabel.TextSize = 24
-ToggleLabel.TextColor3 = Color3.fromRGB(0, 140, 255)
-ToggleLabel.Parent = ToggleButton
-
--- Dragging Setup
-MakeDraggable(MainFrame, Header)
-MakeDraggable(ToggleButton)
-
--- Minimize / Restore Logic
-MinimizeButton.MouseButton1Click:Connect(function()
-    ToggleButton.Position = MainFrame.Position
-    MainFrame.Visible = false
-    ToggleButton.Visible = true
+-- Copy Discord Link
+GetKeyBtn.MouseButton1Click:Connect(function()
+   if setclipboard then
+       setclipboard(CONFIG.DISCORD_LINK)
+       StatusLabel.Text = "✓ Discord link copied to clipboard!"
+       StatusLabel.TextColor3 = CONFIG.THEME.SUCCESS
+   else
+       StatusLabel.Text = "⚠ Please join: "..CONFIG.DISCORD_LINK
+       StatusLabel.TextColor3 = CONFIG.THEME.ACCENT
+   end
+   tween(GetKeyBtn, {Size = UDim2.new(0.46, 0, 0.95, 0)}, 0.1)
+   wait(0.1)
+   tween(GetKeyBtn, {Size = UDim2.new(0.48, 0, 1, 0)}, 0.1)
 end)
 
-ToggleButton.MouseButton1Click:Connect(function()
-    MainFrame.Position = ToggleButton.Position
-    MainFrame.Visible = true
-    ToggleButton.Visible = false
+-- Verify Key
+VerifyBtn.MouseButton1Click:Connect(function()
+   local enteredKey = KeyBox.Text:gsub("%s+", "")
+   
+   tween(VerifyBtn, {Size = UDim2.new(0.46, 0, 0.95, 0)}, 0.1)
+   wait(0.1)
+   tween(VerifyBtn, {Size = UDim2.new(0.48, 0, 1, 0)}, 0.1)
+   
+   if enteredKey == CONFIG.VALID_KEY then
+       StatusLabel.Text = "✓ Access granted! Loading..."
+       StatusLabel.TextColor3 = CONFIG.THEME.SUCCESS
+       
+       wait(0.5)
+       
+       -- Success animation
+       tween(MainFrame, {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.5)
+       wait(0.3)
+       MainFrame.Visible = false
+       MinimizedBtn.Visible = false
+       
+       -- Show main panel
+       MainPanel.Visible = true
+       MainPanel.Size = UDim2.new(0, 0, 0, 0)
+       tween(MainPanel, {Size = UDim2.new(0, 600, 0, 400)}, 0.5)
+       
+       -- Welcome notification
+       local Notif = Instance.new("Frame")
+       Notif.Size = UDim2.new(0, 300, 0, 60)
+       Notif.Position = UDim2.new(0.5, -150, 0, -80)
+       Notif.BackgroundColor3 = CONFIG.THEME.SUCCESS
+       Notif.BorderSizePixel = 0
+       Notif.Parent = ScreenGui
+       
+       local NotifCorner = Instance.new("UICorner")
+       NotifCorner.CornerRadius = UDim.new(0, 12)
+       NotifCorner.Parent = Notif
+       
+       local NotifText = Instance.new("TextLabel")
+       NotifText.Size = UDim2.new(1, -20, 1, 0)
+       NotifText.Position = UDim2.new(0, 10, 0, 0)
+       NotifText.BackgroundTransparency = 1
+       NotifText.Text = "🎉 Welcome! You now have access to all features!"
+       NotifText.TextColor3 = CONFIG.THEME.TEXT
+       NotifText.TextSize = 14
+       NotifText.Font = Enum.Font.GothamBold
+       NotifText.TextWrapped = true
+       NotifText.Parent = Notif
+       
+       tween(Notif, {Position = UDim2.new(0.5, -150, 0, 20)}, 0.5)
+       wait(3)
+       tween(Notif, {Position = UDim2.new(0.5, -150, 0, -80)}, 0.5)
+       wait(0.5)
+       Notif:Destroy()
+       
+   else
+       StatusLabel.Text = "✗ Invalid key! Get it from Discord."
+       StatusLabel.TextColor3 = CONFIG.THEME.ACCENT
+       KeyBox.Text = ""
+       
+       -- Shake animation
+       for i = 1, 5 do
+           KeyBox.Position = UDim2.new(0, 5, 0, 25)
+           wait(0.05)
+           KeyBox.Position = UDim2.new(0, -5, 0, 25)
+           wait(0.05)
+       end
+       KeyBox.Position = UDim2.new(0, 0, 0, 25)
+   end
 end)
 
-CloseButton.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
+-- Minimize Key System
+MinBtn.MouseButton1Click:Connect(function()
+   tween(MainFrame, {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.4)
+   wait(0.4)
+   MainFrame.Visible = false
+   MinimizedBtn.Visible = true
+   tween(MinimizedBtn, {Size = UDim2.new(0, 60, 0, 60)}, 0.3)
 end)
 
--- Force Reset Button
-local ResetButton = Instance.new("TextButton")
-ResetButton.Size = UDim2.fromOffset(120, 30)
-ResetButton.Position = UDim2.fromOffset(10, 10)
-ResetButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-ResetButton.BackgroundTransparency = 0.3
-ResetButton.Text = "Force Reset"
-ResetButton.Font = Enum.Font.GothamBold
-ResetButton.TextSize = 14
-ResetButton.TextColor3 = Color3.new(1, 1, 1)
-ResetButton.Parent = ScreenGui
-
-ResetButton.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
+-- Restore from minimized
+MinimizedBtn.MouseButton1Click:Connect(function()
+   MainFrame.Visible = true
+   tween(MinimizedBtn, {Size = UDim2.new(0, 0, 0, 0)}, 0.2)
+   wait(0.2)
+   MinimizedBtn.Visible = false
+   tween(MainFrame, {Size = UDim2.new(0, 450, 0, 350), Position = UDim2.new(0.5, -225, 0.5, -175)}, 0.4)
 end)
 
--- Authentication Logic
-VerifyButton.MouseButton1Click:Connect(function()
-    local enteredKey = KeyBox.Text:lower() -- Optional: make case-insensitive
-
-    if enteredKey == "nexus" then  -- Change this to your actual key
-        StatusLabel.Text = "Access Granted"
-        StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-
-        task.wait(0.8)
-        AuthFrame.Visible = false
-        MainFrame.Visible = true
-    else
-        StatusLabel.Text = "Invalid Key"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-    end
+-- Close Key System
+CloseBtn.MouseButton1Click:Connect(function()
+   tween(MainFrame, {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.4)
+   wait(0.4)
+   MainFrame.Visible = false
+   MinimizedBtn.Visible = true
+   tween(MinimizedBtn, {Size = UDim2.new(0, 50, 0, 50)}, 0.3)
 end)
+
+-- Panel Controls
+PanelMin.MouseButton1Click:Connect(function()
+   MainPanel.Visible = false
+   MinimizedBtn.Visible = true
+   MinimizedBtn.Position = UDim2.new(0, 20, 0.5, 0)
+   tween(MinimizedBtn, {Size = UDim2.new(0, 60, 0, 60)}, 0.3)
+end)
+
+PanelClose.MouseButton1Click:Connect(function()
+   tween(MainPanel, {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.4)
+   wait(0.4)
+   MainPanel.Visible = false
+   MinimizedBtn.Visible = true
+   tween(MinimizedBtn, {Size = UDim2.new(0, 50, 0, 50)}, 0.3)
+end)
+
+-- Minimized button restores correct frame
+MinimizedBtn.MouseButton1Click:Connect(function()
+   if MainPanel.Visible == false and MainFrame.Visible == false then
+       -- Restore whichever was last open (default to main panel if verified)
+       if MainPanel.Size == UDim2.new(0, 600, 0, 400) then
+           MainPanel.Visible = true
+       else
+           MainFrame.Visible = true
+       end
+       tween(MinimizedBtn, {Size = UDim2.new(0, 0, 0, 0)}, 0.2)
+       wait(0.2)
+       MinimizedBtn.Visible = false
+   end
+end)
+
+-- Opening Animation
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+tween(MainFrame, {Size = UDim2.new(0, 450, 0, 350)}, 0.5)
+
+print("✓ Key System GUI Loaded Successfully!")
