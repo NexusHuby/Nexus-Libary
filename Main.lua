@@ -15,7 +15,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- Configuration
 local CONFIG = {
     TITLE = "PREMIUM HUB",
-    LUCIDE_ICONS_URL = "https://raw.githubusercontent.com/YOURUSERNAME/YOURREPO/main/LucideIcons.lua", -- Replace with your repo
+    LUCIDE_ICONS_URL = "https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/refs/heads/main/Lucidicons.lua", -- Replace with your repo
     COLORS = {
         Background = Color3.fromRGB(25, 25, 30),
         BackgroundTransparency = 0.08,
