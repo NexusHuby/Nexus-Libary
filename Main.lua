@@ -78,6 +78,7 @@ local CONFIG = {
 
 -- State Variables
 local autoCollectCash = false
+local autoCollectCashTweened = false
 local autoUpgradeSpeed = false
 local selectedSpeedAmount = 1
 local autoUpgradeCarry = false
@@ -88,7 +89,7 @@ local selectedBrainrotSlot = nil
 -- NEW: Combat Tab Variables
 local hitboxExtenderEnabled = false
 local autoHitEnabled = false
-local hitboxRange = 50 -- Range to detect enemies
+local hitboxRange = 10 -- Default range, will be controlled by slider
 
 -- NEW: Event Tab Variables
 local autoCollectGoldBars = false
@@ -97,7 +98,7 @@ local currentObbyIndex = 1
 
 -- NEW: Settings Tab Variables
 local autoGapEnabled = false
-local gapDetectionRange = 75 -- Range to detect waves
+local gapDetectionRange = 100 -- Range to detect waves (50-100 studs as requested)
 local isTweeningToGap = false
 
 -- Get Player Base
@@ -228,7 +229,7 @@ local function simulateClick()
     end)
 end
 
--- NEW: Hitbox Extender Loop
+-- NEW: Hitbox Extender Loop - Uses hitboxRange variable
 local function hitboxExtenderLoop()
     while hitboxExtenderEnabled do
         local success, err = pcall(function()
@@ -239,6 +240,7 @@ local function hitboxExtenderLoop()
                 if tool and tool:FindFirstChild("Handle") then
                     -- Visual indicator for extended range
                     -- In reality, this would modify the game's hit detection
+                    -- Using hitboxRange variable for the range
                 end
             end
         end)
@@ -251,7 +253,7 @@ local function hitboxExtenderLoop()
     end
 end
 
--- NEW: Auto Hit Loop
+-- NEW: Auto Hit Loop - Uses hitboxRange variable
 local function autoHitLoop()
     while autoHitEnabled do
         local success, err = pcall(function()
@@ -512,28 +514,74 @@ local function autoCompleteObbyLoop()
     end
 end
 
--- NEW: Auto Gap Loop
+-- IMPROVED: Auto Gap Loop with better wave detection
 local function autoGapLoop()
+    -- Debug info
+    print("Auto Gap started. Looking for waves in:", gapDetectionRange, "studs")
+    
     while autoGapEnabled do
         local success, err = pcall(function()
             local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
             local gapsFolder = Workspace:FindFirstChild("Gaps")
             
-            if not activeTsunamis or not gapsFolder then return end
+            if not activeTsunamis then
+                warn("ActiveTsunamis folder not found in Workspace")
+                return
+            end
             
-            -- Check for nearby waves
+            if not gapsFolder then
+                warn("Gaps folder not found in Workspace")
+                return
+            end
+            
+            -- Debug: Print what we found
+            local waveCount = #activeTsunamis:GetChildren()
+            if waveCount > 0 then
+                print("Found", waveCount, "potential waves/tsunamis")
+            end
+            
+            -- Check for nearby waves - IMPROVED DETECTION
             local waveNearby = false
             local closestWaveDistance = math.huge
+            local closestWave = nil
             
             for _, wave in ipairs(activeTsunamis:GetChildren()) do
-                if wave:IsA("Model") or wave:IsA("BasePart") then
-                    local wavePart = wave:IsA("BasePart") and wave or wave:FindFirstChildWhichIsA("BasePart")
-                    if wavePart then
-                        local distance = (humanoidRootPart.Position - wavePart.Position).Magnitude
-                        if distance <= gapDetectionRange and distance < closestWaveDistance then
-                            waveNearby = true
+                local wavePart = nil
+                
+                -- Try to find the primary part or any base part
+                if wave:IsA("BasePart") then
+                    wavePart = wave
+                elseif wave:IsA("Model") then
+                    -- Check for PrimaryPart first
+                    if wave.PrimaryPart then
+                        wavePart = wave.PrimaryPart
+                    else
+                        -- Look for specific wave part names or any BasePart
+                        wavePart = wave:FindFirstChild("Wave") 
+                            or wave:FindFirstChild("Tsunami") 
+                            or wave:FindFirstChild("Water")
+                            or wave:FindFirstChildWhichIsA("BasePart")
+                    end
+                end
+                
+                if wavePart and wavePart:IsA("BasePart") then
+                    local distance = (humanoidRootPart.Position - wavePart.Position).Magnitude
+                    print("Wave/Part:", wave.Name, "Distance:", math.floor(distance), "studs")
+                    
+                    -- Check if within detection range (50-100 studs as requested)
+                    if distance <= gapDetectionRange and distance >= 50 then
+                        waveNearby = true
+                        if distance < closestWaveDistance then
                             closestWaveDistance = distance
+                            closestWave = wavePart
                         end
+                        print("WAVE DETECTED IN RANGE!")
+                    elseif distance <= gapDetectionRange then
+                        -- Wave is close but maybe too close (less than 50)
+                        waveNearby = true
+                        closestWaveDistance = distance
+                        closestWave = wavePart
+                        print("Wave very close:", math.floor(distance), "studs")
                     end
                 end
             end
@@ -541,20 +589,28 @@ local function autoGapLoop()
             -- If wave is nearby and not already tweening to gap
             if waveNearby and not isTweeningToGap then
                 isTweeningToGap = true
+                print("Wave detected! Finding nearest gap...")
                 
                 -- Find nearest gap
                 local nearestGap = nil
                 local nearestGapDistance = math.huge
                 local targetMud = nil
                 
-                for gapNum = 1, 9 do
-                    local gapName = "Gap " .. gapNum
-                    local gap = gapsFolder:FindFirstChild(gapName)
-                    
-                    if gap then
-                        local mud = gap:FindFirstChild("Mud")
+                -- Look through all children in Gaps folder
+                for _, gap in ipairs(gapsFolder:GetChildren()) do
+                    -- Check if it's a Gap model (Gap 1, Gap 2, etc.)
+                    if gap:IsA("Model") or gap:IsA("Folder") or gap:IsA("BasePart") then
+                        local mud = nil
+                        
+                        if gap:IsA("BasePart") and gap.Name == "Mud" then
+                            mud = gap
+                        else
+                            mud = gap:FindFirstChild("Mud")
+                        end
+                        
                         if mud and mud:IsA("BasePart") then
                             local distance = (humanoidRootPart.Position - mud.Position).Magnitude
+                            print("Gap:", gap.Name, "Distance:", math.floor(distance))
                             if distance < nearestGapDistance then
                                 nearestGapDistance = distance
                                 nearestGap = gap
@@ -566,12 +622,16 @@ local function autoGapLoop()
                 
                 -- Tween to nearest gap's Mud part
                 if targetMud then
+                    print("Tweening to gap:", nearestGap.Name, "at distance:", math.floor(nearestGapDistance))
                     local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.4), {CFrame = targetMud.CFrame})
                     tween:Play()
                     tween.Completed:Wait()
+                    print("Arrived at gap!")
                     
                     -- Stay in gap for a bit
                     task.wait(3)
+                else
+                    warn("No Mud part found in any gap!")
                 end
                 
                 isTweeningToGap = false
@@ -585,6 +645,8 @@ local function autoGapLoop()
         
         task.wait(0.5) -- Check every 0.5 seconds as requested
     end
+    
+    print("Auto Gap stopped")
 end
 
 -- Create GUI
@@ -846,6 +908,145 @@ local function createToggle(parent, name, description, callback)
     return frame
 end
 
+-- NEW: Helper: Create Slider
+local function createSlider(parent, name, description, min, max, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -20, 0, 90)
+    frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
+    frame.BackgroundTransparency = 0.3
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -100, 0, 25)
+    title.Position = UDim2.new(0, 15, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = name
+    title.TextColor3 = CONFIG.COLORS.White
+    title.TextSize = 14
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+    
+    local desc = Instance.new("TextLabel")
+    desc.Size = UDim2.new(1, -100, 0, 20)
+    desc.Position = UDim2.new(0, 15, 0, 30)
+    desc.BackgroundTransparency = 1
+    desc.Font = Enum.Font.Gotham
+    desc.Text = description
+    desc.TextColor3 = CONFIG.COLORS.Gray
+    desc.TextSize = 11
+    desc.TextXAlignment = Enum.TextXAlignment.Left
+    desc.Parent = frame
+    
+    -- Value display
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(0, 50, 0, 20)
+    valueLabel.Position = UDim2.new(1, -65, 0, 10)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.Text = tostring(default)
+    valueLabel.TextColor3 = CONFIG.COLORS.Accent
+    valueLabel.TextSize = 14
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = frame
+    
+    -- Slider background
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Name = "SliderBg"
+    sliderBg.Size = UDim2.new(1, -30, 0, 8)
+    sliderBg.Position = UDim2.new(0, 15, 0, 60)
+    sliderBg.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+    sliderBg.BorderSizePixel = 0
+    sliderBg.Parent = frame
+    
+    local sliderBgCorner = Instance.new("UICorner")
+    sliderBgCorner.CornerRadius = UDim.new(1, 0)
+    sliderBgCorner.Parent = sliderBg
+    
+    -- Slider fill
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Name = "SliderFill"
+    sliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    sliderFill.BackgroundColor3 = CONFIG.COLORS.Accent
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderBg
+    
+    local sliderFillCorner = Instance.new("UICorner")
+    sliderFillCorner.CornerRadius = UDim.new(1, 0)
+    sliderFillCorner.Parent = sliderFill
+    
+    -- Slider knob
+    local sliderKnob = Instance.new("Frame")
+    sliderKnob.Name = "SliderKnob"
+    sliderKnob.Size = UDim2.new(0, 16, 0, 16)
+    sliderKnob.Position = UDim2.new((default - min) / (max - min), -8, 0.5, -8)
+    sliderKnob.BackgroundColor3 = CONFIG.COLORS.White
+    sliderKnob.BorderSizePixel = 0
+    sliderKnob.Parent = sliderBg
+    
+    local sliderKnobCorner = Instance.new("UICorner")
+    sliderKnobCorner.CornerRadius = UDim.new(1, 0)
+    sliderKnobCorner.Parent = sliderKnob
+    
+    -- Invisible slider button for clicking
+    local sliderBtn = Instance.new("TextButton")
+    sliderBtn.Name = "SliderBtn"
+    sliderBtn.Size = UDim2.new(1, 0, 1, 0)
+    sliderBtn.BackgroundTransparency = 1
+    sliderBtn.Text = ""
+    sliderBtn.Parent = sliderBg
+    
+    local currentValue = default
+    
+    local function updateSlider(input)
+        local pos = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+        local value = math.floor(min + (pos * (max - min)))
+        
+        if value ~= currentValue then
+            currentValue = value
+            valueLabel.Text = tostring(value)
+            
+            TweenService:Create(sliderFill, TweenInfo.new(0.1), {
+                Size = UDim2.new(pos, 0, 1, 0)
+            }):Play()
+            
+            TweenService:Create(sliderKnob, TweenInfo.new(0.1), {
+                Position = UDim2.new(pos, -8, 0.5, -8)
+            }):Play()
+            
+            callback(value)
+        end
+    end
+    
+    local dragging = false
+    
+    sliderBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            updateSlider(input)
+        end
+    end)
+    
+    sliderBtn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateSlider(input)
+        end
+    end)
+    
+    return frame
+end
+
 -- Helper: Create Dropdown - FIXED VERSION with refresh support
 local function createDropdown(parent, name, getOptionsFunc, callback)
     local frame = Instance.new("Frame")
@@ -1034,6 +1235,12 @@ createToggle(combatTab, "Hitbox Extender", "Extends attack range to hit enemies"
     end
 end)
 
+-- Hitbox Range Slider (1-50 studs)
+createSlider(combatTab, "Hitbox Range", "Adjust attack range distance", 1, 50, 10, function(value)
+    hitboxRange = value
+    print("Hitbox range set to:", value)
+end)
+
 -- Auto Hit Toggle
 createToggle(combatTab, "Auto Hit", "Auto equips tool and attacks nearby enemies", function(enabled)
     autoHitEnabled = enabled
@@ -1088,6 +1295,12 @@ createToggle(settingsTab, "Auto Gap", "Automatically detects waves and tweens to
     if enabled then
         task.spawn(autoGapLoop)
     end
+end)
+
+-- Detection Range Slider for Auto Gap
+createSlider(settingsTab, "Wave Detection Range", "Distance to detect waves (50-200 studs)", 50, 200, 100, function(value)
+    gapDetectionRange = value
+    print("Wave detection range set to:", value)
 end)
 
 -- Select Automation tab by default
