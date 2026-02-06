@@ -12,7 +12,18 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- Configuration
 local CONFIG = {
     KEY_LINK = "https://discord.gg/yourlink",
-    VALID_KEYS = {"FREEKEY2024", "DISCORD123", "SPECIALACCESS"},
+    local VALID_KEYS = {
+    "NEXU-L76M-0HUD-DPR9",
+    "NEXU-RWBC-VNU5-KFTW",
+    "NEXU-C22P-1K4H-0MXC",
+    "NEXU-BLIO-I0HQ-OO8O",
+    "NEXU-29Q0-KSTP-ULOD",
+    "NEXU-IJII-4B6L-URHH",
+    "NEXU-75FA-XCYO-65XJ",
+    "NEXU-R3EV-A4T0-5I6W",
+    "NEXU-NNGX-QO04-5TEG",
+    "NEXU-Y2KI-PKG6-NFOM",
+}
     -- FIXED: Raw GitHub URL format
     MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/refs/heads/main/Main.lua",
     
