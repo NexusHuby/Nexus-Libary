@@ -15,7 +15,7 @@ local CONFIG = {
     KEY_LINK = "https://discord.gg/yourlink",
     VALID_KEYS = {"FREEKEY2024", "DISCORD123", "SPECIALACCESS"},
     -- REPLACE WITH YOUR RAW GITHUB URL FOR MAIN SCRIPT
-    MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/YOURUSERNAME/YOURREPO/main/MainScript.lua",
+    MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/refs/heads/main/Main.lua",
     
     COLORS = {
         Background = Color3.fromRGB(30, 30, 35),
