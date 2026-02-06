@@ -1,50 +1,70 @@
 --[[
-    Premium Main Hub - Polished UI
-    Features: Draggable, minimize to image button, cyan stroke, gradient animation, Lucide-style icons
+    Premium Main Hub - Polished UI with Fixes
+    Features: Avatar display, Lucide icons, Server management, Fixed minimize system
 ]]
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 -- Configuration
 local CONFIG = {
     TITLE = "PREMIUM HUB",
+    LUCIDE_ICONS_URL = "https://raw.githubusercontent.com/YOURUSERNAME/YOURREPO/main/LucideIcons.lua", -- Replace with your repo
     COLORS = {
         Background = Color3.fromRGB(25, 25, 30),
         BackgroundTransparency = 0.08,
         Sidebar = Color3.fromRGB(35, 35, 40),
         Accent = Color3.fromRGB(88, 101, 242),
-        CyanStroke = Color3.fromRGB(100, 200, 255), -- Baby blue/Cyan
+        CyanStroke = Color3.fromRGB(100, 200, 255),
         Success = Color3.fromRGB(87, 242, 135),
         Warning = Color3.fromRGB(255, 200, 100),
-        Danger = Color3.fromRGB(255, 100, 100), -- Red for X
+        Danger = Color3.fromRGB(255, 100, 100),
         White = Color3.fromRGB(255, 255, 255),
         Gray = Color3.fromRGB(180, 180, 180),
         DarkGray = Color3.fromRGB(100, 100, 100),
         Hover = Color3.fromRGB(55, 55, 65)
-    },
-    -- Lucide-style icons using text symbols
-    ICONS = {
-        Home = "⌂",           -- House
-        Features = "⚡",       -- Zap
-        Settings = "⚙",       -- Settings/Cog
-        User = "👤",          -- User
-        Shield = "🛡",        -- Shield
-        Gamepad = "🎮",       -- Gamepad
-        Code = "❮❯",          -- Code brackets
-        Search = "🔍",        -- Search
-        Bell = "🔔",          -- Bell
-        Menu = "☰",           -- Menu
-        X = "✕",              -- X close
-        Minus = "−",          -- Minus
-        ChevronRight = "❯",   -- Chevron
-        Check = "✓",          -- Check
-        Sparkles = "✨"        -- Sparkles
     }
 }
+
+-- Load Lucide Icons (Fallback to text if not available)
+local LucideIcons = {}
+local iconsLoaded, iconsError = pcall(function()
+    local response = game:HttpGet(CONFIG.LUCIDE_ICONS_URL)
+    if response then
+        LucideIcons = loadstring(response)()
+    end
+end)
+
+if not iconsLoaded then
+    -- Fallback icons
+    LucideIcons = {
+        home = "⌂",
+        zap = "⚡",
+        gamepad = "🎮",
+        code = "❮❯",
+        settings = "⚙",
+        user = "👤",
+        shield = "🛡",
+        check = "✓",
+        x = "✕",
+        minus = "−",
+        menu = "☰",
+        chevronRight = "❯",
+        search = "🔍",
+        refresh = "↻",
+        copy = "📋",
+        externalLink = "↗",
+        users = "👥",
+        logOut = "→",
+        sparkles = "✨"
+    }
+end
 
 -- Create Main GUI
 local screenGui = Instance.new("ScreenGui")
@@ -56,6 +76,7 @@ screenGui.Parent = playerGui
 -- Minimized State
 local isMinimized = false
 local dragButton = nil
+local savedButtonPosition = nil
 
 -- Main Frame
 local mainFrame = Instance.new("Frame")
@@ -69,14 +90,13 @@ mainFrame.Active = true
 mainFrame.ClipsDescendants = true
 mainFrame.Parent = screenGui
 
--- Cyan Stroke (Baby Blue)
+-- Cyan Stroke
 local mainStroke = Instance.new("UIStroke")
 mainStroke.Color = CONFIG.COLORS.CyanStroke
 mainStroke.Thickness = 1.2
 mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 mainStroke.Parent = mainFrame
 
--- Rounded corners
 local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 16)
 mainCorner.Parent = mainFrame
@@ -91,7 +111,7 @@ bgGradient.Color = ColorSequence.new({
 bgGradient.Rotation = 45
 bgGradient.Parent = mainFrame
 
--- Gradient Animation Loop
+-- Gradient Animation
 spawn(function()
     while mainFrame and mainFrame.Parent do
         for i = 45, 405, 0.5 do
@@ -115,7 +135,7 @@ local glossCorner = Instance.new("UICorner")
 glossCorner.CornerRadius = UDim.new(0, 16)
 glossCorner.Parent = glossOverlay
 
--- Drag Functionality
+-- Drag Functionality for Main Frame
 local dragging = false
 local dragInput, dragStart, startPos
 
@@ -164,59 +184,44 @@ titleLabel.Size = UDim2.new(0, 200, 1, 0)
 titleLabel.Position = UDim2.new(0, 20, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Text = CONFIG.ICONS.Sparkles .. " " .. CONFIG.TITLE
+titleLabel.Text = LucideIcons.sparkles .. " " .. CONFIG.TITLE
 titleLabel.TextColor3 = CONFIG.COLORS.White
 titleLabel.TextSize = 20
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = topBar
 
--- Close Button (Red X with hover outline)
+-- Close Button (Transparency 1)
 local closeBtn = Instance.new("TextButton")
 closeBtn.Name = "CloseBtn"
 closeBtn.Size = UDim2.new(0, 32, 0, 32)
 closeBtn.Position = UDim2.new(1, -42, 0.5, -16)
-closeBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-closeBtn.BackgroundTransparency = 0.5
+closeBtn.BackgroundTransparency = 1 -- Fully transparent
 closeBtn.BorderSizePixel = 0
 closeBtn.Font = Enum.Font.GothamBold
-closeBtn.Text = CONFIG.ICONS.X
-closeBtn.TextColor3 = CONFIG.COLORS.Danger -- Red
-closeBtn.TextSize = 16
+closeBtn.Text = LucideIcons.x
+closeBtn.TextColor3 = CONFIG.COLORS.Danger
+closeBtn.TextSize = 18
 closeBtn.AutoButtonColor = false
 closeBtn.Parent = topBar
 
-local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(0, 8)
-closeCorner.Parent = closeBtn
-
--- Close button outline (appears on hover)
+-- Close button hover outline
 local closeOutline = Instance.new("UIStroke")
 closeOutline.Color = CONFIG.COLORS.Danger
-closeOutline.Thickness = 0 -- Start invisible
+closeOutline.Thickness = 0
 closeOutline.Transparency = 0.5
 closeOutline.Parent = closeBtn
 
--- Close button hover effects
 closeBtn.MouseEnter:Connect(function()
-    TweenService:Create(closeBtn, TweenInfo.new(0.2), {
-        BackgroundColor3 = Color3.fromRGB(255, 100, 100),
-        BackgroundTransparency = 0.3
-    }):Play()
     TweenService:Create(closeBtn, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.White}):Play()
-    TweenService:Create(closeOutline, TweenInfo.new(0.2), {Thickness = 2}):Play()
+    TweenService:Create(closeOutline, TweenInfo.new(0.2), {Thickness = 1.5}):Play()
 end)
 
 closeBtn.MouseLeave:Connect(function()
-    TweenService:Create(closeBtn, TweenInfo.new(0.2), {
-        BackgroundColor3 = Color3.fromRGB(45, 45, 50),
-        BackgroundTransparency = 0.5
-    }):Play()
     TweenService:Create(closeBtn, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Danger}):Play()
     TweenService:Create(closeOutline, TweenInfo.new(0.2), {Thickness = 0}):Play()
 end)
 
 closeBtn.MouseButton1Click:Connect(function()
-    -- Close animation
     TweenService:Create(mainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
         Size = UDim2.new(0, 0, 0, 0),
         Position = UDim2.new(mainFrame.Position.X.Scale, mainFrame.Position.X.Offset + 350, mainFrame.Position.Y.Scale, mainFrame.Position.Y.Offset + 225),
@@ -232,70 +237,59 @@ closeBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Minimize Button
+-- Minimize Button (Transparency 1)
 local minBtn = Instance.new("TextButton")
 minBtn.Name = "MinBtn"
 minBtn.Size = UDim2.new(0, 32, 0, 32)
 minBtn.Position = UDim2.new(1, -80, 0.5, -16)
-minBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-minBtn.BackgroundTransparency = 0.5
+minBtn.BackgroundTransparency = 1 -- Fully transparent
 minBtn.BorderSizePixel = 0
 minBtn.Font = Enum.Font.GothamBold
-minBtn.Text = CONFIG.ICONS.Minus
+minBtn.Text = LucideIcons.minus
 minBtn.TextColor3 = CONFIG.COLORS.Gray
-minBtn.TextSize = 18
+minBtn.TextSize = 20
 minBtn.AutoButtonColor = false
 minBtn.Parent = topBar
 
-local minCorner = Instance.new("UICorner")
-minCorner.CornerRadius = UDim.new(0, 8)
-minCorner.Parent = minBtn
-
--- Minimize hover effects
 minBtn.MouseEnter:Connect(function()
-    TweenService:Create(minBtn, TweenInfo.new(0.2), {
-        BackgroundColor3 = CONFIG.COLORS.Accent,
-        BackgroundTransparency = 0.3
-    }):Play()
     TweenService:Create(minBtn, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.White}):Play()
 end)
 
 minBtn.MouseLeave:Connect(function()
-    TweenService:Create(minBtn, TweenInfo.new(0.2), {
-        BackgroundColor3 = Color3.fromRGB(45, 45, 50),
-        BackgroundTransparency = 0.5
-    }):Play()
     TweenService:Create(minBtn, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
 end)
 
--- Create Drag Button (Image Button for minimized state)
+-- Create Drag Button (Image Button)
 local function createDragButton()
     local btn = Instance.new("ImageButton")
     btn.Name = "DragToggleBtn"
     btn.Size = UDim2.new(0, 50, 0, 50)
-    btn.Position = UDim2.new(0, 100, 0, 100)
+    -- Use saved position or default
+    if savedButtonPosition then
+        btn.Position = savedButtonPosition
+    else
+        btn.Position = UDim2.new(0, 100, 0, 100)
+    end
     btn.BackgroundColor3 = CONFIG.COLORS.Accent
     btn.BackgroundTransparency = 0.2
     btn.BorderSizePixel = 0
-    btn.Image = "rbxassetid://3926305904" -- Circle icon (you can change this)
+    btn.Image = "rbxassetid://3926305904"
     btn.ImageColor3 = CONFIG.COLORS.White
     btn.ImageTransparency = 0
     btn.ScaleType = Enum.ScaleType.Fit
     btn.Active = true
+    btn.Visible = false
     btn.Parent = screenGui
     
-    -- Make it circular
     local btnCorner = Instance.new("UICorner")
     btnCorner.CornerRadius = UDim.new(1, 0)
     btnCorner.Parent = btn
     
-    -- Cyan stroke for drag button
     local btnStroke = Instance.new("UIStroke")
     btnStroke.Color = CONFIG.COLORS.CyanStroke
     btnStroke.Thickness = 2
     btnStroke.Parent = btn
     
-    -- Glow effect
     local glow = Instance.new("ImageLabel")
     glow.Name = "Glow"
     glow.Size = UDim2.new(1.4, 0, 1.4, 0)
@@ -311,12 +305,11 @@ local function createDragButton()
     glowCorner.CornerRadius = UDim.new(1, 0)
     glowCorner.Parent = glow
     
-    -- Icon inside
     local icon = Instance.new("TextLabel")
     icon.Size = UDim2.new(1, 0, 1, 0)
     icon.BackgroundTransparency = 1
     icon.Font = Enum.Font.GothamBold
-    icon.Text = CONFIG.ICONS.Menu
+    icon.Text = LucideIcons.menu
     icon.TextColor3 = CONFIG.COLORS.White
     icon.TextSize = 20
     icon.Parent = btn
@@ -324,6 +317,7 @@ local function createDragButton()
     -- Drag functionality for button
     local btnDragging = false
     local btnDragInput, btnDragStart, btnStartPos
+    local dragThreshold = 5 -- pixels to consider a drag vs click
     
     local function updateBtnDrag(input)
         local delta = input.Position - btnDragStart
@@ -332,26 +326,29 @@ local function createDragButton()
     
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            btnDragging = true
+            btnDragging = false -- Start as false, set to true if moved
             btnDragStart = input.Position
             btnStartPos = btn.Position
             
-            input.Changed:Connect(function()
+            local connection
+            connection = input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
-                    btnDragging = false
-                    -- Toggle main frame on click release if not dragged
+                    connection:Disconnect()
                     if not btnDragging then
+                        -- It was a click, not a drag
                         isMinimized = not isMinimized
                         if isMinimized then
                             mainFrame.Visible = false
                         else
                             mainFrame.Visible = true
-                            -- Pop animation
                             mainFrame.Size = UDim2.new(0, 680, 0, 430)
                             TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back), {
                                 Size = UDim2.new(0, 700, 0, 450)
                             }):Play()
                         end
+                    else
+                        -- Save position after drag
+                        savedButtonPosition = btn.Position
                     end
                 end
             end)
@@ -361,6 +358,14 @@ local function createDragButton()
     btn.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             btnDragInput = input
+            
+            -- Check if moved enough to be considered a drag
+            if btnDragStart then
+                local delta = (input.Position - btnDragStart).Magnitude
+                if delta > dragThreshold then
+                    btnDragging = true
+                end
+            end
         end
     end)
     
@@ -399,16 +404,20 @@ local function createDragButton()
 end
 
 dragButton = createDragButton()
-dragButton.Visible = false
 
 -- Minimize functionality
 minBtn.MouseButton1Click:Connect(function()
+    if isMinimized then return end
+    
     isMinimized = true
     mainFrame.Visible = false
     dragButton.Visible = true
-    dragButton.Position = UDim2.new(0, mainFrame.AbsolutePosition.X + 350 - 25, 0, mainFrame.AbsolutePosition.Y + 225 - 25)
     
-    -- Pop in animation for drag button
+    -- Position drag button near where main frame was
+    if not savedButtonPosition then
+        dragButton.Position = UDim2.new(0, mainFrame.AbsolutePosition.X + 650, 0, mainFrame.AbsolutePosition.Y + 20)
+    end
+    
     dragButton.Size = UDim2.new(0, 0, 0, 0)
     TweenService:Create(dragButton, TweenInfo.new(0.4, Enum.EasingStyle.Back), {
         Size = UDim2.new(0, 50, 0, 50)
@@ -425,72 +434,80 @@ sidebar.BackgroundTransparency = 0.3
 sidebar.BorderSizePixel = 0
 sidebar.Parent = mainFrame
 
+-- FIX: Remove the black bar by not using a fix frame, instead clip corners properly
 local sidebarCorner = Instance.new("UICorner")
 sidebarCorner.CornerRadius = UDim.new(0, 0)
 sidebarCorner.Parent = sidebar
 
--- Fix sidebar (only left corners)
-local sidebarFix = Instance.new("Frame")
-sidebarFix.Name = "Fix"
-sidebarFix.Size = UDim2.new(0, 20, 1, 0)
-sidebarFix.Position = UDim2.new(1, -20, 0, 0)
-sidebarFix.BackgroundColor3 = CONFIG.COLORS.Sidebar
-sidebarFix.BackgroundTransparency = 0.3
-sidebarFix.BorderSizePixel = 0
-sidebarFix.Parent = sidebar
-
--- User Profile Section
-local profileFrame = Instance.new("Frame")
-profileFrame.Name = "Profile"
-profileFrame.Size = UDim2.new(1, -20, 0, 80)
-profileFrame.Position = UDim2.new(0, 10, 0, 10)
-profileFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-profileFrame.BackgroundTransparency = 0.5
-profileFrame.BorderSizePixel = 0
-profileFrame.Parent = sidebar
+-- User Profile Button (Clickable)
+local profileButton = Instance.new("TextButton")
+profileButton.Name = "ProfileButton"
+profileButton.Size = UDim2.new(1, -20, 0, 80)
+profileButton.Position = UDim2.new(0, 10, 0, 10)
+profileButton.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+profileButton.BackgroundTransparency = 0.5
+profileButton.BorderSizePixel = 0
+profileButton.AutoButtonColor = false
+profileButton.Text = ""
+profileButton.Parent = sidebar
 
 local profileCorner = Instance.new("UICorner")
 profileCorner.CornerRadius = UDim.new(0, 12)
-profileCorner.Parent = profileFrame
+profileCorner.Parent = profileButton
 
--- Avatar placeholder
-local avatar = Instance.new("TextLabel")
-avatar.Size = UDim2.new(0, 40, 0, 40)
-avatar.Position = UDim2.new(0, 15, 0.5, -20)
-avatar.BackgroundColor3 = CONFIG.COLORS.Accent
-avatar.BackgroundTransparency = 0.3
-avatar.Font = Enum.Font.GothamBold
-avatar.Text = CONFIG.ICONS.User
-avatar.TextColor3 = CONFIG.COLORS.White
-avatar.TextSize = 20
-avatar.Parent = profileFrame
+-- Avatar Image
+local avatarImage = Instance.new("ImageLabel")
+avatarImage.Name = "Avatar"
+avatarImage.Size = UDim2.new(0, 50, 0, 50)
+avatarImage.Position = UDim2.new(0, 15, 0.5, -25)
+avatarImage.BackgroundColor3 = CONFIG.COLORS.Accent
+avatarImage.BackgroundTransparency = 0.3
+avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150"
+avatarImage.Parent = profileButton
 
 local avatarCorner = Instance.new("UICorner")
 avatarCorner.CornerRadius = UDim.new(1, 0)
-avatarCorner.Parent = avatar
+avatarCorner.Parent = avatarImage
 
 -- Username
 local userLabel = Instance.new("TextLabel")
-userLabel.Size = UDim2.new(1, -75, 0, 25)
-userLabel.Position = UDim2.new(0, 65, 0, 15)
+userLabel.Size = UDim2.new(1, -85, 0, 25)
+userLabel.Position = UDim2.new(0, 75, 0, 15)
 userLabel.BackgroundTransparency = 1
 userLabel.Font = Enum.Font.GothamBold
 userLabel.Text = player.Name
 userLabel.TextColor3 = CONFIG.COLORS.White
 userLabel.TextSize = 14
 userLabel.TextTruncate = Enum.TextTruncate.AtEnd
-userLabel.Parent = profileFrame
+userLabel.TextXAlignment = Enum.TextXAlignment.Left
+userLabel.Parent = profileButton
 
 -- Status
 local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -75, 0, 20)
-statusLabel.Position = UDim2.new(0, 65, 0, 40)
+statusLabel.Size = UDim2.new(1, -85, 0, 20)
+statusLabel.Position = UDim2.new(0, 75, 0, 42)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Font = Enum.Font.GothamBold
-statusLabel.Text = CONFIG.ICONS.Shield .. " PREMIUM"
+statusLabel.Text = LucideIcons.shield .. " PREMIUM"
 statusLabel.TextColor3 = CONFIG.COLORS.Success
 statusLabel.TextSize = 11
-statusLabel.Parent = profileFrame
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = profileButton
+
+-- Profile hover effect
+profileButton.MouseEnter:Connect(function()
+    TweenService:Create(profileButton, TweenInfo.new(0.2), {
+        BackgroundColor3 = Color3.fromRGB(55, 55, 65),
+        BackgroundTransparency = 0.3
+    }):Play()
+end)
+
+profileButton.MouseLeave:Connect(function()
+    TweenService:Create(profileButton, TweenInfo.new(0.2), {
+        BackgroundColor3 = Color3.fromRGB(45, 45, 55),
+        BackgroundTransparency = 0.5
+    }):Play()
+end)
 
 -- Tab Container (Vertical Layout)
 local tabContainer = Instance.new("Frame")
@@ -509,8 +526,9 @@ tabList.Parent = tabContainer
 -- Tab Management
 local currentTab = nil
 local tabs = {}
+local contentFrames = {}
 
-local function createTab(name, icon, layoutOrder)
+local function createTab(name, iconKey, layoutOrder)
     local tabButton = Instance.new("TextButton")
     tabButton.Name = name .. "Tab"
     tabButton.Size = UDim2.new(1, 0, 0, 40)
@@ -531,7 +549,7 @@ local function createTab(name, icon, layoutOrder)
     iconLabel.Position = UDim2.new(0, 12, 0, 0)
     iconLabel.BackgroundTransparency = 1
     iconLabel.Font = Enum.Font.GothamBold
-    iconLabel.Text = icon
+    iconLabel.Text = LucideIcons[iconKey] or "•"
     iconLabel.TextColor3 = CONFIG.COLORS.Gray
     iconLabel.TextSize = 18
     iconLabel.Parent = tabButton
@@ -554,7 +572,7 @@ local function createTab(name, icon, layoutOrder)
     chevron.Position = UDim2.new(1, -25, 0, 0)
     chevron.BackgroundTransparency = 1
     chevron.Font = Enum.Font.GothamBold
-    chevron.Text = CONFIG.ICONS.ChevronRight
+    chevron.Text = LucideIcons.chevronRight
     chevron.TextColor3 = CONFIG.COLORS.DarkGray
     chevron.TextSize = 12
     chevron.Parent = tabButton
@@ -597,6 +615,11 @@ local function createTab(name, icon, layoutOrder)
     tabButton.MouseButton1Click:Connect(function()
         if currentTab == tabButton then return end
         
+        -- Hide all contents first
+        for _, frame in pairs(contentFrames) do
+            frame.Visible = false
+        end
+        
         -- Deactivate previous
         if currentTab then
             local prevData = tabs[currentTab]
@@ -607,7 +630,6 @@ local function createTab(name, icon, layoutOrder)
             TweenService:Create(prevData.icon, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
             TweenService:Create(prevData.text, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
             TweenService:Create(prevData.chevron, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
-            prevData.content.Visible = false
         end
         
         -- Activate new
@@ -620,10 +642,9 @@ local function createTab(name, icon, layoutOrder)
         TweenService:Create(textLabel, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.White}):Play()
         TweenService:Create(chevron, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
         
-        -- Fade in content
+        -- Show content
         contentFrame.Visible = true
-        contentFrame.ScrollBarImageTransparency = 1
-        TweenService:Create(contentFrame, TweenInfo.new(0.3), {ScrollBarImageTransparency = 0}):Play()
+        contentFrame.CanvasPosition = Vector2.new(0, 0)
     end)
     
     tabs[tabButton] = {
@@ -632,128 +653,377 @@ local function createTab(name, icon, layoutOrder)
         chevron = chevron,
         content = contentFrame
     }
+    contentFrames[name] = contentFrame
     
     return contentFrame
 end
 
--- Create Tabs
-local homeTab = createTab("Dashboard", CONFIG.ICONS.Home, 1)
-local featuresTab = createTab("Features", CONFIG.ICONS.Features, 2)
-local gameTab = createTab("Game", CONFIG.ICONS.Gamepad, 3)
-local codeTab = createTab("Scripts", CONFIG.ICONS.Code, 4)
-local settingsTab = createTab("Settings", CONFIG.ICONS.Settings, 5)
+-- Create Tabs (No Dashboard)
+local featuresTab = createTab("Features", "zap", 1)
+local gameTab = createTab("Game", "gamepad", 2)
+local scriptsTab = createTab("Scripts", "code", 3)
+local settingsTab = createTab("Settings", "settings", 4)
 
--- Populate Home Tab
-local welcomeCard = Instance.new("Frame")
-welcomeCard.Size = UDim2.new(1, -20, 0, 120)
-welcomeCard.Position = UDim2.new(0, 10, 0, 10)
-welcomeCard.BackgroundColor3 = Color3.fromRGB(40, 45, 60)
-welcomeCard.BackgroundTransparency = 0.3
-welcomeCard.BorderSizePixel = 0
-welcomeCard.Parent = homeTab
+-- SERVER TAB (Replaces Dashboard - opens when clicking profile)
+local serverFrame = Instance.new("ScrollingFrame")
+serverFrame.Name = "ServerContent"
+serverFrame.Size = UDim2.new(1, -200, 1, -70)
+serverFrame.Position = UDim2.new(0, 190, 0, 60)
+serverFrame.BackgroundTransparency = 1
+serverFrame.BorderSizePixel = 0
+serverFrame.ScrollBarThickness = 4
+serverFrame.ScrollBarImageColor3 = CONFIG.COLORS.Accent
+serverFrame.Visible = false
+serverFrame.Parent = mainFrame
 
-local cardCorner = Instance.new("UICorner")
-cardCorner.CornerRadius = UDim.new(0, 12)
-cardCorner.Parent = welcomeCard
+contentFrames["Server"] = serverFrame
 
-local welcomeTitle = Instance.new("TextLabel")
-welcomeTitle.Size = UDim2.new(1, -30, 0, 30)
-welcomeTitle.Position = UDim2.new(0, 15, 0, 15)
-welcomeTitle.BackgroundTransparency = 1
-welcomeTitle.Font = Enum.Font.GothamBold
-welcomeTitle.Text = "Welcome back, " .. player.Name .. "!"
-welcomeTitle.TextColor3 = CONFIG.COLORS.White
-welcomeTitle.TextSize = 18
-welcomeTitle.Parent = welcomeCard
+-- Server Management UI
+local serverTitle = Instance.new("TextLabel")
+serverTitle.Size = UDim2.new(1, -20, 0, 30)
+serverTitle.Position = UDim2.new(0, 10, 0, 10)
+serverTitle.BackgroundTransparency = 1
+serverTitle.Font = Enum.Font.GothamBold
+serverTitle.Text = LucideIcons.users .. " Server Management"
+serverTitle.TextColor3 = CONFIG.COLORS.White
+serverTitle.TextSize = 20
+serverTitle.Parent = serverFrame
 
-local welcomeDesc = Instance.new("TextLabel")
-welcomeDesc.Size = UDim2.new(1, -30, 0, 50)
-welcomeDesc.Position = UDim2.new(0, 15, 0, 50)
-welcomeDesc.BackgroundTransparency = 1
-welcomeDesc.Font = Enum.Font.Gotham
-welcomeDesc.Text = "Your key has been verified and saved. All premium features are now available for your account."
-welcomeDesc.TextColor3 = CONFIG.COLORS.Gray
-welcomeDesc.TextSize = 13
-welcomeDesc.TextWrapped = true
-welcomeDesc.Parent = welcomeCard
+-- Current Server Info Card
+local serverInfoCard = Instance.new("Frame")
+serverInfoCard.Size = UDim2.new(1, -20, 0, 140)
+serverInfoCard.Position = UDim2.new(0, 10, 0, 50)
+serverInfoCard.BackgroundColor3 = Color3.fromRGB(40, 45, 60)
+serverInfoCard.BackgroundTransparency = 0.3
+serverInfoCard.BorderSizePixel = 0
+serverInfoCard.Parent = serverFrame
 
--- Stats Grid
-local statsGrid = Instance.new("Frame")
-statsGrid.Size = UDim2.new(1, -20, 0, 100)
-statsGrid.Position = UDim2.new(0, 10, 0, 140)
-statsGrid.BackgroundTransparency = 1
-statsGrid.Parent = homeTab
+local serverInfoCorner = Instance.new("UICorner")
+serverInfoCorner.CornerRadius = UDim.new(0, 12)
+serverInfoCorner.Parent = serverInfoCard
 
-local gridLayout = Instance.new("UIGridLayout")
-gridLayout.CellSize = UDim2.new(0.48, 0, 0, 45)
-gridLayout.CellPadding = UDim2.new(0.04, 0, 0, 10)
-gridLayout.FillDirection = Enum.FillDirection.Horizontal
-gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
-gridLayout.Parent = statsGrid
+-- Job ID Display
+local jobIdLabel = Instance.new("TextLabel")
+jobIdLabel.Size = UDim2.new(1, -30, 0, 25)
+jobIdLabel.Position = UDim2.new(0, 15, 0, 15)
+jobIdLabel.BackgroundTransparency = 1
+jobIdLabel.Font = Enum.Font.GothamBold
+jobIdLabel.Text = "Current Job ID"
+jobIdLabel.TextColor3 = CONFIG.COLORS.Gray
+jobIdLabel.TextSize = 12
+jobIdLabel.Parent = serverInfoCard
 
-local function createStatCard(title, value, icon, color)
-    local card = Instance.new("Frame")
-    card.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-    card.BackgroundTransparency = 0.4
-    card.BorderSizePixel = 0
+local jobIdValue = Instance.new("TextLabel")
+jobIdValue.Size = UDim2.new(1, -30, 0, 30)
+jobIdValue.Position = UDim2.new(0, 15, 0, 40)
+jobIdValue.BackgroundTransparency = 1
+jobIdValue.Font = Enum.Font.Gotham)
+jobIdValue.Text = game.JobId
+jobIdValue.TextColor3 = CONFIG.COLORS.White
+jobIdValue.TextSize = 14
+jobIdValue.TextWrapped = true
+jobIdValue.Parent = serverInfoCard
+
+-- Copy Job ID Button
+local copyJobIdBtn = Instance.new("TextButton")
+copyJobIdBtn.Size = UDim2.new(0, 120, 0, 32)
+copyJobIdBtn.Position = UDim2.new(0, 15, 0, 85)
+copyJobIdBtn.BackgroundColor3 = CONFIG.COLORS.Accent
+copyJobIdBtn.BorderSizePixel = 0
+copyJobIdBtn.Font = Enum.Font.GothamBold
+copyJobIdBtn.Text = LucideIcons.copy .. " Copy"
+copyJobIdBtn.TextColor3 = CONFIG.COLORS.White
+copyJobIdBtn.TextSize = 12
+copyJobIdBtn.AutoButtonColor = false
+copyJobIdBtn.Parent = serverInfoCard
+
+local copyBtnCorner = Instance.new("UICorner")
+copyBtnCorner.CornerRadius = UDim.new(0, 8)
+copyBtnCorner.Parent = copyJobIdBtn
+
+copyJobIdBtn.MouseEnter:Connect(function()
+    TweenService:Create(copyJobIdBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(110, 123, 255)}):Play()
+end)
+
+copyJobIdBtn.MouseLeave:Connect(function()
+    TweenService:Create(copyJobIdBtn, TweenInfo.new(0.2), {BackgroundColor3 = CONFIG.COLORS.Accent}):Play()
+end)
+
+copyJobIdBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(game.JobId)
+        copyJobIdBtn.Text = LucideIcons.check .. " Copied!"
+        task.delay(2, function()
+            copyJobIdBtn.Text = LucideIcons.copy .. " Copy"
+        end)
+    end
+end)
+
+-- Rejoin Button
+local rejoinBtn = Instance.new("TextButton")
+rejoinBtn.Size = UDim2.new(0, 100, 0, 32)
+rejoinBtn.Position = UDim2.new(0, 145, 0, 85)
+rejoinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+rejoinBtn.BorderSizePixel = 0
+rejoinBtn.Font = Enum.Font.GothamBold
+rejoinBtn.Text = LucideIcons.refresh .. " Rejoin"
+rejoinBtn.TextColor3 = CONFIG.COLORS.White
+rejoinBtn.TextSize = 12
+rejoinBtn.AutoButtonColor = false
+rejoinBtn.Parent = serverInfoCard
+
+local rejoinCorner = Instance.new("UICorner")
+rejoinCorner.CornerRadius = UDim.new(0, 8)
+rejoinCorner.Parent = rejoinBtn
+
+rejoinBtn.MouseEnter:Connect(function()
+    TweenService:Create(rejoinBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(80, 80, 90)}):Play()
+end)
+
+rejoinBtn.MouseLeave:Connect(function()
+    TweenService:Create(rejoinBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 70)}):Play()
+end)
+
+rejoinBtn.MouseButton1Click:Connect(function()
+    TeleportService:Teleport(game.PlaceId, player)
+end)
+
+-- Server Hop Button
+local serverHopBtn = Instance.new("TextButton")
+serverHopBtn.Size = UDim2.new(0, 110, 0, 32)
+serverHopBtn.Position = UDim2.new(0, 255, 0, 85)
+serverHopBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+serverHopBtn.BorderSizePixel = 0
+serverHopBtn.Font = Enum.Font.GothamBold
+serverHopBtn.Text = LucideIcons.externalLink .. " Server Hop"
+serverHopBtn.TextColor3 = CONFIG.COLORS.White
+serverHopBtn.TextSize = 12
+serverHopBtn.AutoButtonColor = false
+serverHopBtn.Parent = serverInfoCard
+
+local hopCorner = Instance.new("UICorner")
+hopCorner.CornerRadius = UDim.new(0, 8)
+hopCorner.Parent = serverHopBtn
+
+serverHopBtn.MouseEnter:Connect(function()
+    TweenService:Create(serverHopBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(80, 80, 90)}):Play()
+end)
+
+serverHopBtn.MouseLeave:Connect(function()
+    TweenService:Create(serverHopBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 70)}):Play()
+end)
+
+serverHopBtn.MouseButton1Click:Connect(function()
+    -- Simple server hop
+    local servers = {}
+    local req = game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
+    local data = HttpService:JSONDecode(req)
     
-    local cardCorner = Instance.new("UICorner")
-    cardCorner.CornerRadius = UDim.new(0, 10)
-    cardCorner.Parent = card
+    for _, server in ipairs(data.data) do
+        if server.playing < server.maxPlayers and server.id ~= game.JobId then
+            table.insert(servers, server.id)
+        end
+    end
     
-    local iconLabel = Instance.new("TextLabel")
-    iconLabel.Size = UDim2.new(0, 30, 0, 30)
-    iconLabel.Position = UDim2.new(0, 10, 0.5, -15)
-    iconLabel.BackgroundColor3 = color
-    iconLabel.BackgroundTransparency = 0.8
-    iconLabel.Font = Enum.Font.GothamBold
-    iconLabel.Text = icon
-    iconLabel.TextColor3 = color
-    iconLabel.TextSize = 16
-    iconLabel.Parent = card
+    if #servers > 0 then
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)], player)
+    end
+end)
+
+-- Join Job ID Section
+local joinJobCard = Instance.new("Frame")
+joinJobCard.Size = UDim2.new(1, -20, 0, 120)
+joinJobCard.Position = UDim2.new(0, 10, 0, 200)
+joinJobCard.BackgroundColor3 = Color3.fromRGB(40, 45, 60)
+joinJobCard.BackgroundTransparency = 0.3
+joinJobCard.BorderSizePixel = 0
+joinJobCard.Parent = serverFrame
+
+local joinJobCorner = Instance.new("UICorner")
+joinJobCorner.CornerRadius = UDim.new(0, 12)
+joinJobCorner.Parent = joinJobCard
+
+local joinTitle = Instance.new("TextLabel")
+joinTitle.Size = UDim2.new(1, -30, 0, 25)
+joinTitle.Position = UDim2.new(0, 15, 0, 15)
+joinTitle.BackgroundTransparency = 1
+joinTitle.Font = Enum.Font.GothamBold
+joinTitle.Text = "Join Specific Server"
+joinTitle.TextColor3 = CONFIG.COLORS.Gray
+joinTitle.TextSize = 12
+joinTitle.Parent = joinJobCard
+
+-- Job ID Input
+local jobIdInput = Instance.new("TextBox")
+jobIdInput.Size = UDim2.new(1, -140, 0, 35)
+jobIdInput.Position = UDim2.new(0, 15, 0, 45)
+jobIdInput.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+jobIdInput.BorderSizePixel = 0
+jobIdInput.Font = Enum.Font.Gotham
+jobIdInput.PlaceholderText = "Paste Job ID here..."
+jobIdInput.PlaceholderColor3 = CONFIG.COLORS.DarkGray
+jobIdInput.Text = ""
+jobIdInput.TextColor3 = CONFIG.COLORS.White
+jobIdInput.TextSize = 13
+jobIdInput.Parent = joinJobCard
+
+local inputCorner = Instance.new("UICorner")
+inputCorner.CornerRadius = UDim.new(0, 8)
+inputCorner.Parent = jobIdInput
+
+local inputStroke = Instance.new("UIStroke")
+inputStroke.Color = CONFIG.COLORS.DarkGray
+inputStroke.Thickness = 1
+inputStroke.Parent = jobIdInput
+
+jobIdInput.Focused:Connect(function()
+    TweenService:Create(inputStroke, TweenInfo.new(0.2), {Color = CONFIG.COLORS.Accent}):Play()
+end)
+
+jobIdInput.FocusLost:Connect(function()
+    TweenService:Create(inputStroke, TweenInfo.new(0.2), {Color = CONFIG.COLORS.DarkGray}):Play()
+end)
+
+-- Join Button
+local joinBtn = Instance.new("TextButton")
+joinBtn.Size = UDim2.new(0, 100, 0, 35)
+joinBtn.Position = UDim2.new(1, -115, 0, 45)
+joinBtn.BackgroundColor3 = CONFIG.COLORS.Success
+joinBtn.BorderSizePixel = 0
+joinBtn.Font = Enum.Font.GothamBold
+joinBtn.Text = "Join"
+joinBtn.TextColor3 = CONFIG.COLORS.White
+joinBtn.TextSize = 13
+joinBtn.AutoButtonColor = false
+joinBtn.Parent = joinJobCard
+
+local joinBtnCorner = Instance.new("UICorner")
+joinBtnCorner.CornerRadius = UDim.new(0, 8)
+joinBtnCorner.Parent = joinBtn
+
+joinBtn.MouseEnter:Connect(function()
+    TweenService:Create(joinBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(107, 255, 155)}):Play()
+end)
+
+joinBtn.MouseLeave:Connect(function()
+    TweenService:Create(joinBtn, TweenInfo.new(0.2), {BackgroundColor3 = CONFIG.COLORS.Success}):Play()
+end)
+
+joinBtn.MouseButton1Click:Connect(function()
+    local jobId = jobIdInput.Text:gsub("%s+", "")
+    if jobId ~= "" then
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, jobId, player)
+    else
+        jobIdInput.PlaceholderText = "Please enter a Job ID!"
+        task.delay(2, function()
+            jobIdInput.PlaceholderText = "Paste Job ID here..."
+        end)
+    end
+end)
+
+-- Player List Section
+local playersTitle = Instance.new("TextLabel")
+playersTitle.Size = UDim2.new(1, -20, 0, 30)
+playersTitle.Position = UDim2.new(0, 10, 0, 330)
+playersTitle.BackgroundTransparency = 1
+playersTitle.Font = Enum.Font.GothamBold
+playersTitle.Text = LucideIcons.users .. " Players in Server (" .. #Players:GetPlayers() .. ")"
+playersTitle.TextColor3 = CONFIG.COLORS.White
+playersTitle.TextSize = 16
+playersTitle.Parent = serverFrame
+
+local playersContainer = Instance.new("Frame")
+playersContainer.Size = UDim2.new(1, -20, 0, 0) -- Will expand dynamically
+playersContainer.Position = UDim2.new(0, 10, 0, 365)
+playersContainer.BackgroundTransparency = 1
+playersContainer.Parent = serverFrame
+
+local playersList = Instance.new("UIListLayout")
+playersList.Padding = UDim.new(0, 5)
+playersList.Parent = playersContainer
+
+local function updatePlayerList()
+    -- Clear existing
+    for _, child in ipairs(playersContainer:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
     
-    local iconCorner = Instance.new("UICorner")
-    iconCorner.CornerRadius = UDim.new(0, 8)
-    iconCorner.Parent = iconLabel
+    for _, plr in ipairs(Players:GetPlayers()) do
+        local plrCard = Instance.new("Frame")
+        plrCard.Size = UDim2.new(1, 0, 0, 45)
+        plrCard.BackgroundColor3 = Color3.fromRGB(40, 45, 60)
+        plrCard.BackgroundTransparency = 0.4
+        plrCard.BorderSizePixel = 0
+        plrCard.Parent = playersContainer
+        
+        local plrCorner = Instance.new("UICorner")
+        plrCorner.CornerRadius = UDim.new(0, 8)
+        plrCorner.Parent = plrCard
+        
+        local plrAvatar = Instance.new("ImageLabel")
+        plrAvatar.Size = UDim2.new(0, 32, 0, 32)
+        plrAvatar.Position = UDim2.new(0, 8, 0.5, -16)
+        plrAvatar.BackgroundColor3 = CONFIG.COLORS.DarkGray
+        plrAvatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. plr.UserId .. "&w=150&h=150"
+        plrAvatar.Parent = plrCard
+        
+        local plrAvatarCorner = Instance.new("UICorner")
+        plrAvatarCorner.CornerRadius = UDim.new(1, 0)
+        plrAvatarCorner.Parent = plrAvatar
+        
+        local plrName = Instance.new("TextLabel")
+        plrName.Size = UDim2.new(1, -55, 1, 0)
+        plrName.Position = UDim2.new(0, 50, 0, 0)
+        plrName.BackgroundTransparency = 1
+        plrName.Font = Enum.Font.GothamBold
+        plrName.Text = plr.Name .. (plr == player and " (You)" or "")
+        plrName.TextColor3 = plr == player and CONFIG.COLORS.Accent or CONFIG.COLORS.White
+        plrName.TextSize = 13
+        plrName.TextXAlignment = Enum.TextXAlignment.Left
+        plrName.Parent = plrCard
+        
+        -- Hover effect
+        plrCard.MouseEnter:Connect(function()
+            TweenService:Create(plrCard, TweenInfo.new(0.2), {BackgroundTransparency = 0.2}):Play()
+        end)
+        
+        plrCard.MouseLeave:Connect(function()
+            TweenService:Create(plrCard, TweenInfo.new(0.2), {BackgroundTransparency = 0.4}):Play()
+        end)
+    end
     
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Size = UDim2.new(1, -55, 0, 20)
-    titleLabel.Position = UDim2.new(0, 50, 0, 5)
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Font = Enum.Font.Gotham
-    titleLabel.Text = title
-    titleLabel.TextColor3 = CONFIG.COLORS.Gray
-    titleLabel.TextSize = 11
-    titleLabel.Parent = card
-    
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Size = UDim2.new(1, -55, 0, 25)
-    valueLabel.Position = UDim2.new(0, 50, 0, 22)
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Font = Enum.Font.GothamBold
-    valueLabel.Text = value
-    valueLabel.TextColor3 = CONFIG.COLORS.White
-    valueLabel.TextSize = 16
-    valueLabel.Parent = card
-    
-    -- Hover effect
-    card.MouseEnter:Connect(function()
-        TweenService:Create(card, TweenInfo.new(0.2), {BackgroundTransparency = 0.2}):Play()
-    end)
-    
-    card.MouseLeave:Connect(function()
-        TweenService:Create(card, TweenInfo.new(0.2), {BackgroundTransparency = 0.4}):Play()
-    end)
-    
-    return card
+    playersTitle.Text = LucideIcons.users .. " Players in Server (" .. #Players:GetPlayers() .. ")"
+    playersContainer.Size = UDim2.new(1, -20, 0, #Players:GetPlayers() * 50)
+    serverFrame.CanvasSize = UDim2.new(0, 0, 0, 365 + (#Players:GetPlayers() * 50) + 20)
 end
 
-createStatCard("Status", "Active", CONFIG.ICONS.Check, CONFIG.COLORS.Success).Parent = statsGrid
-createStatCard("Version", "v2.0", CONFIG.ICONS.Code, CONFIG.COLORS.Accent).Parent = statsGrid
-createStatCard("Features", "25+", CONFIG.ICONS.Sparkles, CONFIG.COLORS.Warning).Parent = statsGrid
-createStatCard("Security", "HWID", CONFIG.ICONS.Shield, CONFIG.COLORS.CyanStroke).Parent = statsGrid
+updatePlayerList()
+Players.PlayerAdded:Connect(updatePlayerList)
+Players.PlayerRemoving:Connect(updatePlayerList)
 
--- Populate Features Tab with example buttons
+-- Profile Button Click - Show Server Tab
+profileButton.MouseButton1Click:Connect(function()
+    -- Hide all tabs
+    for _, frame in pairs(contentFrames) do
+        frame.Visible = false
+    end
+    
+    -- Reset all tab visuals
+    for btn, data in pairs(tabs) do
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            BackgroundColor3 = CONFIG.COLORS.Background,
+            BackgroundTransparency = 0.5
+        }):Play()
+        TweenService:Create(data.icon, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
+        TweenService:Create(data.text, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
+        TweenService:Create(data.chevron, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
+    end
+    
+    currentTab = nil
+    serverFrame.Visible = true
+end)
+
+-- Populate Features Tab
 local featureLayout = Instance.new("UIListLayout")
 featureLayout.Padding = UDim.new(0, 10)
 featureLayout.Parent = featuresTab
@@ -772,7 +1042,7 @@ local function createFeatureButton(name, description)
     btnCorner.Parent = btn
     
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 25)
+    title.Size = UDim2.new(1, -80, 0, 25)
     title.Position = UDim2.new(0, 15, 0, 8)
     title.BackgroundTransparency = 1
     title.Font = Enum.Font.GothamBold
@@ -783,7 +1053,7 @@ local function createFeatureButton(name, description)
     title.Parent = btn
     
     local desc = Instance.new("TextLabel")
-    desc.Size = UDim2.new(1, -20, 0, 20)
+    desc.Size = UDim2.new(1, -80, 0, 20)
     desc.Position = UDim2.new(0, 15, 0, 32)
     desc.BackgroundTransparency = 1
     desc.Font = Enum.Font.Gotham
@@ -793,10 +1063,10 @@ local function createFeatureButton(name, description)
     desc.TextXAlignment = Enum.TextXAlignment.Left
     desc.Parent = btn
     
-    -- Toggle indicator
+    -- Toggle
     local toggle = Instance.new("Frame")
-    toggle.Size = UDim2.new(0, 40, 0, 22)
-    toggle.Position = UDim2.new(1, -55, 0.5, -11)
+    toggle.Size = UDim2.new(0, 44, 0, 24)
+    toggle.Position = UDim2.new(1, -59, 0.5, -12)
     toggle.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
     toggle.BorderSizePixel = 0
     toggle.Parent = btn
@@ -806,8 +1076,8 @@ local function createFeatureButton(name, description)
     toggleCorner.Parent = toggle
     
     local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 18, 0, 18)
-    knob.Position = UDim2.new(0, 2, 0.5, -9)
+    knob.Size = UDim2.new(0, 20, 0, 20)
+    knob.Position = UDim2.new(0, 2, 0.5, -10)
     knob.BackgroundColor3 = CONFIG.COLORS.White
     knob.BorderSizePixel = 0
     knob.Parent = toggle
@@ -830,10 +1100,10 @@ local function createFeatureButton(name, description)
         enabled = not enabled
         if enabled then
             TweenService:Create(toggle, TweenInfo.new(0.2), {BackgroundColor3 = CONFIG.COLORS.Success}):Play()
-            TweenService:Create(knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 20, 0.5, -9)}):Play()
+            TweenService:Create(knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 22, 0.5, -10)}):Play()
         else
             TweenService:Create(toggle, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 70)}):Play()
-            TweenService:Create(knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -9)}):Play()
+            TweenService:Create(knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -10)}):Play()
         end
     end)
     
@@ -909,15 +1179,16 @@ resetBtn.MouseButton1Click:Connect(function()
         if isfile("SystemID_7392.dat") then delfile("SystemID_7392.dat") end
     end)
     resetBtn.Text = "Reset!"
-    task.wait(1)
-    resetBtn.Text = "Reset Key"
+    task.delay(1, function()
+        resetBtn.Text = "Reset Key"
+    end)
 end)
 
--- Select Home tab by default
+-- Select Features tab by default
 task.delay(0.3, function()
-    local homeTabBtn = sidebar:FindFirstChild("DashboardTab")
-    if homeTabBtn then
-        homeTabBtn.MouseButton1Click:Fire()
+    local featuresTabBtn = sidebar:FindFirstChild("FeaturesTab")
+    if featuresTabBtn then
+        featuresTabBtn.MouseButton1Click:Fire()
     end
 end)
 
