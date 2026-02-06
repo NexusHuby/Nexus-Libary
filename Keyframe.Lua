@@ -1,7 +1,6 @@
 --[[
-    Premium Key System UI - Two Repo System with Persistence
-    Repo 1: Key System (This script)
-    Repo 2: Main Script (Loaded after key verification)
+    Nexus Key System - Fixed Version
+    Repo: https://github.com/NexusHuby/Nexus-Libary
 ]]
 
 local Players = game:GetService("Players")
@@ -14,8 +13,8 @@ local playerGui = player:WaitForChild("PlayerGui")
 local CONFIG = {
     KEY_LINK = "https://discord.gg/yourlink",
     VALID_KEYS = {"FREEKEY2024", "DISCORD123", "SPECIALACCESS"},
-    -- REPLACE WITH YOUR RAW GITHUB URL FOR MAIN SCRIPT
-    MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/refs/heads/main/Main.lua",
+    -- FIXED: Raw GitHub URL format
+    MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/Main.lua",
     
     COLORS = {
         Background = Color3.fromRGB(30, 30, 35),
@@ -44,16 +43,16 @@ local CONFIG = {
     }
 }
 
--- File name for key storage (hidden)
-local KEY_FILE = "SystemCache_9821.dat"
-local HWID_FILE = "SystemID_7392.dat"
+-- File names for key storage
+local KEY_FILE = "NexusCache_9821.dat"
+local HWID_FILE = "NexusID_7392.dat"
 
--- Generate simple HWID (Hardware ID) for extra security
+-- Generate HWID
 local function generateHWID()
     return tostring(game:GetService("HttpService"):GenerateGUID(false))
 end
 
--- Save key with HWID binding
+-- Save key
 local function saveKey(key)
     local success = pcall(function()
         local hwid = generateHWID()
@@ -68,7 +67,7 @@ local function saveKey(key)
     return success
 end
 
--- Load and verify saved key
+-- Load saved key
 local function loadSavedKey()
     local success, result = pcall(function()
         if not isfile(KEY_FILE) or not isfile(HWID_FILE) then
@@ -78,12 +77,10 @@ local function loadSavedKey()
         local data = HttpService:JSONDecode(readfile(KEY_FILE))
         local storedHWID = readfile(HWID_FILE)
         
-        -- Verify HWID matches (prevents key sharing)
         if data.hwid ~= storedHWID then
             return nil
         end
         
-        -- Check if key is still valid
         for _, validKey in ipairs(CONFIG.VALID_KEYS) do
             if data.key:upper() == validKey:upper() then
                 return data.key
@@ -96,29 +93,55 @@ local function loadSavedKey()
     return success and result or nil
 end
 
--- Clear saved key (for logout/reset)
-local function clearSavedKey()
-    pcall(function()
-        if isfile(KEY_FILE) then delfile(KEY_FILE) end
-        if isfile(HWID_FILE) then delfile(HWID_FILE) end
-    end)
-end
-
--- Load main script from GitHub
+-- FIXED: Load main script function (Line 121)
 local function loadMainScript()
     local success, result = pcall(function()
+        -- FIXED: Proper HTTP request and loadstring execution
         local response = game:HttpGet(CONFIG.MAIN_SCRIPT_URL)
         if response and #response > 0 then
-            return loadstring(response)()
+            -- FIXED: Execute the loaded script properly
+            local loadedFunction, loadError = loadstring(response)
+            if loadedFunction then
+                return loadedFunction()
+            else
+                error("Failed to load script: " .. tostring(loadError))
+            end
         else
-            error("Failed to fetch main script")
+            error("Empty response from server")
         end
     end)
     
     if not success then
         warn("Failed to load main script: " .. tostring(result))
-        -- Fallback: Show error UI
-        showErrorFrame("Failed to load main script. Please check your internet connection.")
+        -- Show error UI
+        local errorGui = Instance.new("ScreenGui")
+        errorGui.Name = "ErrorGui"
+        errorGui.Parent = playerGui
+        
+        local errorFrame = Instance.new("Frame")
+        errorFrame.Size = UDim2.new(0, 300, 0, 100)
+        errorFrame.Position = UDim2.new(0.5, -150, 0.5, -50)
+        errorFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+        errorFrame.Parent = errorGui
+        
+        local errorCorner = Instance.new("UICorner")
+        errorCorner.CornerRadius = UDim.new(0, 12)
+        errorCorner.Parent = errorFrame
+        
+        local errorText = Instance.new("TextLabel")
+        errorText.Size = UDim2.new(1, -20, 1, 0)
+        errorText.Position = UDim2.new(0, 10, 0, 0)
+        errorText.BackgroundTransparency = 1
+        errorText.Font = Enum.Font.GothamBold
+        errorText.Text = "Failed to load main script!\nCheck your internet connection."
+        errorText.TextColor3 = Color3.fromRGB(255, 100, 100)
+        errorText.TextSize = 14
+        errorText.TextWrapped = true
+        errorText.Parent = errorFrame
+        
+        task.delay(3, function()
+            errorGui:Destroy()
+        end)
     end
     
     return success
@@ -133,9 +156,8 @@ if savedKey then
 end
 
 -- If no saved key, show key system UI
--- Create ScreenGui
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "PremiumKeySystem"
+screenGui.Name = "NexusKeySystem"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = playerGui
@@ -575,11 +597,25 @@ local function setupGradientButtonHover(button, gradient, originalStart, origina
     end)
 end
 
-setupGradientButtonHover(getKeyButton, getKeyGradient, CONFIG.COLORS.GetKeyStart, CONFIG.COLORS.GetKeyEnd,
-    Color3.fromRGB(100, 100, 110), Color3.fromRGB(70, 70, 80), getKeyStroke)
+setupGradientButtonHover(
+    getKeyButton, 
+    getKeyGradient, 
+    CONFIG.COLORS.GetKeyStart, 
+    CONFIG.COLORS.GetKeyEnd,
+    Color3.fromRGB(100, 100, 110),
+    Color3.fromRGB(70, 70, 80),
+    getKeyStroke
+)
 
-setupGradientButtonHover(verifyButton, verifyGradient, CONFIG.COLORS.VerifyStart, CONFIG.COLORS.VerifyEnd,
-    Color3.fromRGB(150, 160, 255), Color3.fromRGB(110, 123, 255), verifyStroke)
+setupGradientButtonHover(
+    verifyButton, 
+    verifyGradient, 
+    CONFIG.COLORS.VerifyStart, 
+    CONFIG.COLORS.VerifyEnd,
+    Color3.fromRGB(150, 160, 255),
+    Color3.fromRGB(110, 123, 255),
+    verifyStroke
+)
 
 -- Input effects
 keyInput.Focused:Connect(function()
@@ -634,7 +670,6 @@ verifyButton.MouseButton1Click:Connect(function()
     end
     
     if isValid then
-        -- Save key for future use
         local saved = saveKey(enteredKey)
         if saved then
             print("Key saved successfully!")
@@ -645,7 +680,6 @@ verifyButton.MouseButton1Click:Connect(function()
         statusLabel.Text = "Success! Loading main script..."
         statusLabel.TextColor3 = CONFIG.COLORS.Success
         
-        -- Success animation
         TweenService:Create(mainFrame, TWEEN_INFO.Fade, {BackgroundTransparency = 1}):Play()
         
         for _, child in ipairs(mainFrame:GetDescendants()) do
@@ -662,7 +696,6 @@ verifyButton.MouseButton1Click:Connect(function()
             end
         end
         
-        -- Load main script after animation
         task.delay(0.6, function()
             screenGui:Destroy()
             loadMainScript()
@@ -729,4 +762,4 @@ task.delay(0.2, function()
     end
 end)
 
-print("Premium Key System Loaded Successfully!")
+print("Nexus Key System Loaded Successfully!")
