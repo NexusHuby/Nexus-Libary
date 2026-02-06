@@ -313,8 +313,9 @@ local function autoCollectCashLoop()
             if base then
                 local slots = base:FindFirstChild("Slots")
                 if slots then
-                    -- Tween player 3 studs up when toggled
-                    if humanoidRootPart then
+                    -- Tween player 3 studs up when toggled (only once when starting)
+                    if humanoidRootPart and not autoCollectCashTweened then
+                        autoCollectCashTweened = true
                         local currentPos = humanoidRootPart.Position
                         local upPosition = currentPos + Vector3.new(0, 3, 0)
                         local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.3), {CFrame = CFrame.new(upPosition)})
@@ -322,7 +323,10 @@ local function autoCollectCashLoop()
                     end
                     
                     for i = 1, 40 do
-                        if not autoCollectCash then break end
+                        if not autoCollectCash then 
+                            autoCollectCashTweened = false
+                            break 
+                        end
                         
                         local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
                         if slot then
@@ -350,6 +354,7 @@ local function autoCollectCashLoop()
         
         task.wait(0.1)
     end
+    autoCollectCashTweened = false
 end
 
 -- Auto Upgrade Speed Loop - FIXED
@@ -745,7 +750,7 @@ local function createTab(name, icon)
     return contentFrame
 end
 
--- Create Tabs
+-- Create Tabs - ALL TABS ARE CREATED HERE
 local automationTab = createTab("Automation", "⚡")
 local combatTab = createTab("Combat", "⚔️")
 local eventTab = createTab("Event", "🎉")
@@ -841,8 +846,8 @@ local function createToggle(parent, name, description, callback)
     return frame
 end
 
--- Helper: Create Dropdown
-local function createDropdown(parent, name, options, callback, refreshCallback)
+-- Helper: Create Dropdown - FIXED VERSION with refresh support
+local function createDropdown(parent, name, getOptionsFunc, callback)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, -20, 0, 80)
     frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
@@ -871,7 +876,7 @@ local function createDropdown(parent, name, options, callback, refreshCallback)
     dropdownBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
     dropdownBtn.BorderSizePixel = 0
     dropdownBtn.Font = Enum.Font.Gotham
-    dropdownBtn.Text = options[1] or "Select..."
+    dropdownBtn.Text = "Select..."
     dropdownBtn.TextColor3 = CONFIG.COLORS.Gray
     dropdownBtn.TextSize = 12
     dropdownBtn.Parent = frame
@@ -881,28 +886,49 @@ local function createDropdown(parent, name, options, callback, refreshCallback)
     btnCorner.Parent = dropdownBtn
     
     local selectedIndex = 1
-    local currentOptions = options
+    local currentOptions = {}
+    local currentData = {}
+    
+    -- Function to refresh dropdown options
+    local function refreshOptions()
+        local optionsData = getOptionsFunc()
+        currentOptions = {}
+        currentData = optionsData
+        
+        if #optionsData > 0 then
+            for _, data in ipairs(optionsData) do
+                table.insert(currentOptions, data.name .. " (Slot " .. data.slot .. ")")
+            end
+            selectedIndex = 1
+            dropdownBtn.Text = currentOptions[1]
+        else
+            currentOptions = {"No brainrots found - Click to refresh"}
+            selectedIndex = 1
+            dropdownBtn.Text = currentOptions[1]
+        end
+    end
+    
+    -- Initial load
+    refreshOptions()
     
     dropdownBtn.MouseButton1Click:Connect(function()
-        -- If refresh callback exists and showing "No brainrots found", refresh
-        if refreshCallback and currentOptions[1] and string.find(currentOptions[1]:lower(), "no brainrots") then
-            refreshCallback()
+        -- If showing "No brainrots found", refresh first
+        if #currentOptions == 1 and string.find(currentOptions[1]:lower(), "no brainrots") then
+            refreshOptions()
             return
         end
         
+        -- Cycle through options
         selectedIndex = selectedIndex % #currentOptions + 1
         dropdownBtn.Text = currentOptions[selectedIndex]
-        callback(currentOptions[selectedIndex], selectedIndex)
+        
+        -- Call callback with data
+        if currentData[selectedIndex] then
+            callback(currentData[selectedIndex], selectedIndex)
+        end
     end)
     
-    -- Function to update dropdown options
-    local function updateOptions(newOptions)
-        currentOptions = newOptions
-        selectedIndex = 1
-        dropdownBtn.Text = currentOptions[1] or "Select..."
-    end
-    
-    return frame, updateOptions
+    return frame, refreshOptions
 end
 
 -- Helper: Create Button
@@ -954,10 +980,14 @@ createToggle(automationTab, "Auto Collect Cash", "Brings cash from your base onl
 end)
 
 -- Speed Upgrade Dropdown
-createDropdown(automationTab, "Auto Upgrade Speed", {"+1 Speed", "+5 Speed", "+10 Speed"}, function(selection, index)
-    if index == 1 then selectedSpeedAmount = 1
-    elseif index == 2 then selectedSpeedAmount = 5
-    elseif index == 3 then selectedSpeedAmount = 10 end
+createDropdown(automationTab, "Auto Upgrade Speed", function() 
+    return {
+        {name = "+1 Speed", slot = 1},
+        {name = "+5 Speed", slot = 5},
+        {name = "+10 Speed", slot = 10}
+    }
+end, function(selection, index)
+    selectedSpeedAmount = selection.slot
 end)
 
 -- Auto Upgrade Speed Toggle
@@ -976,44 +1006,20 @@ createToggle(automationTab, "Auto Upgrade Carry", "Automatically upgrades carry 
     end
 end)
 
--- Brainrot Dropdown (Dynamic) - FIXED VERSION
-local brainrotOptions = {}
-local brainrotData = {}
-local brainrotDropdownFrame, updateBrainrotDropdown = nil, nil
-
-local function refreshBrainrotDropdown()
-    brainrotData = getBrainrotNames()
-    brainrotOptions = {}
-    
-    if #brainrotData > 0 then
-        for _, data in ipairs(brainrotData) do
-            table.insert(brainrotOptions, data.name .. " (Slot " .. data.slot .. ")")
-        end
-    else
-        brainrotOptions = {"No brainrots found - Click to refresh"}
-    end
-    
-    if updateBrainrotDropdown then
-        updateBrainrotDropdown(brainrotOptions)
-    end
-end
-
--- Initial load
-refreshBrainrotDropdown()
-
-brainrotDropdownFrame, updateBrainrotDropdown = createDropdown(automationTab, "Select Brainrot to Upgrade", brainrotOptions, function(selection, index)
-    if brainrotData[index] then
-        selectedBrainrotSlot = brainrotData[index].slot
-        print("Selected brainrot slot:", selectedBrainrotSlot)
-    end
-end, refreshBrainrotDropdown)
+-- Brainrot Dropdown - FIXED with proper refresh
+local brainrotDropdown, refreshBrainrotDropdown = createDropdown(automationTab, "Select Brainrot to Upgrade", getBrainrotNames, function(data, index)
+    selectedBrainrotSlot = data.slot
+    print("Selected brainrot slot:", selectedBrainrotSlot)
+end)
 
 -- Auto Upgrade Brainrot Toggle
 createToggle(automationTab, "Auto Upgrade Brainrot", "Automatically upgrades selected brainrot", function(enabled)
     autoUpgradeBrainrot = enabled
     if enabled then
-        -- Refresh dropdown when enabling to ensure we have latest data
-        refreshBrainrotDropdown()
+        -- Refresh when enabling to ensure latest data
+        if refreshBrainrotDropdown then
+            refreshBrainrotDropdown()
+        end
         task.spawn(autoUpgradeBrainrotLoop)
     end
 end)
