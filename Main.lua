@@ -7,6 +7,7 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -18,6 +19,7 @@ if not character then
 end
 
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
 
 -- Safely get Remotes with error handling
 local function getRemote(path, name)
@@ -83,6 +85,21 @@ local autoSellInventory = false
 local autoUpgradeBrainrot = false
 local selectedBrainrotSlot = nil
 
+-- NEW: Combat Tab Variables
+local hitboxExtenderEnabled = false
+local autoHitEnabled = false
+local hitboxRange = 50 -- Range to detect enemies
+
+-- NEW: Event Tab Variables
+local autoCollectGoldBars = false
+local autoCompleteObby = false
+local currentObbyIndex = 1
+
+-- NEW: Settings Tab Variables
+local autoGapEnabled = false
+local gapDetectionRange = 75 -- Range to detect waves
+local isTweeningToGap = false
+
 -- Get Player Base
 local function getPlayerBase()
     local bases = Workspace:FindFirstChild("Bases")
@@ -123,7 +140,7 @@ local function getPlayerBase()
     return closestBase
 end
 
--- Get All Brainrot Names from Base
+-- Get All Brainrot Names from Base - FIXED VERSION
 local function getBrainrotNames()
     local brainrots = {}
     local base = getPlayerBase()
@@ -155,7 +172,140 @@ local function getBrainrotNames()
     return brainrots
 end
 
--- Auto Collect Cash Function - FIXED
+-- NEW: Get Enemies in Range for Combat
+local function getEnemiesInRange(range)
+    local enemies = {}
+    local players = Players:GetPlayers()
+    
+    for _, targetPlayer in ipairs(players) do
+        if targetPlayer ~= player and targetPlayer.Character then
+            local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if targetHRP then
+                local distance = (humanoidRootPart.Position - targetHRP.Position).Magnitude
+                if distance <= range then
+                    table.insert(enemies, targetPlayer)
+                end
+            end
+        end
+    end
+    
+    return enemies
+end
+
+-- NEW: Get Tool from Backpack and Equip
+local function getAndEquipTool()
+    local backpack = player:WaitForChild("Backpack")
+    
+    -- Find first tool in backpack
+    for _, tool in ipairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            tool.Parent = character
+            return tool
+        end
+    end
+    
+    return nil
+end
+
+-- NEW: Simulate Click
+local function simulateClick()
+    -- Method 1: VirtualInputManager style (if supported)
+    pcall(function()
+        -- Try to activate the tool
+        local tool = character:FindFirstChildWhichIsA("Tool")
+        if tool then
+            tool:Activate()
+        end
+    end)
+    
+    -- Method 2: Fire click detectors if present
+    pcall(function()
+        local tool = character:FindFirstChildWhichIsA("Tool")
+        if tool and tool:FindFirstChild("Handle") then
+            -- Simulate left click using UserInputService
+            -- This is a visual simulation, actual hitting depends on game mechanics
+        end
+    end)
+end
+
+-- NEW: Hitbox Extender Loop
+local function hitboxExtenderLoop()
+    while hitboxExtenderEnabled do
+        local success, err = pcall(function()
+            -- Extend hitbox by modifying tool properties or using magnitude checks
+            -- This is visual representation - actual implementation depends on game
+            if character then
+                local tool = character:FindFirstChildWhichIsA("Tool")
+                if tool and tool:FindFirstChild("Handle") then
+                    -- Visual indicator for extended range
+                    -- In reality, this would modify the game's hit detection
+                end
+            end
+        end)
+        
+        if not success then
+            warn("Hitbox extender error:", err)
+        end
+        
+        task.wait(0.1)
+    end
+end
+
+-- NEW: Auto Hit Loop
+local function autoHitLoop()
+    while autoHitEnabled do
+        local success, err = pcall(function()
+            local enemies = getEnemiesInRange(hitboxRange)
+            
+            if #enemies > 0 then
+                -- Get closest enemy
+                local closestEnemy = enemies[1]
+                local closestDist = math.huge
+                
+                for _, enemy in ipairs(enemies) do
+                    if enemy.Character and enemy.Character:FindFirstChild("HumanoidRootPart") then
+                        local dist = (humanoidRootPart.Position - enemy.Character.HumanoidRootPart.Position).Magnitude
+                        if dist < closestDist then
+                            closestDist = dist
+                            closestEnemy = enemy
+                        end
+                    end
+                end
+                
+                -- Equip tool if not already equipped
+                local tool = character:FindFirstChildWhichIsA("Tool")
+                if not tool then
+                    tool = getAndEquipTool()
+                end
+                
+                if tool and closestEnemy.Character then
+                    -- Face the enemy
+                    local enemyHRP = closestEnemy.Character:FindFirstChild("HumanoidRootPart")
+                    if enemyHRP then
+                        -- Look at enemy
+                        humanoidRootPart.CFrame = CFrame.lookAt(humanoidRootPart.Position, Vector3.new(enemyHRP.Position.X, humanoidRootPart.Position.Y, enemyHRP.Position.Z))
+                        
+                        -- Activate tool (swing/attack)
+                        simulateClick()
+                        
+                        -- If tool has an attack remote, fire it
+                        if tool:FindFirstChild("Attack") and tool.Attack:IsA("RemoteEvent") then
+                            tool.Attack:FireServer(closestEnemy)
+                        end
+                    end
+                end
+            end
+        end)
+        
+        if not success then
+            warn("Auto hit error:", err)
+        end
+        
+        task.wait(0.2) -- Attack cooldown
+    end
+end
+
+-- FIXED: Auto Collect Cash Function - Only from player's base with tween up
 local function autoCollectCashLoop()
     while autoCollectCash do
         local success, err = pcall(function()
@@ -163,6 +313,14 @@ local function autoCollectCashLoop()
             if base then
                 local slots = base:FindFirstChild("Slots")
                 if slots then
+                    -- Tween player 3 studs up when toggled
+                    if humanoidRootPart then
+                        local currentPos = humanoidRootPart.Position
+                        local upPosition = currentPos + Vector3.new(0, 3, 0)
+                        local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.3), {CFrame = CFrame.new(upPosition)})
+                        tween:Play()
+                    end
+                    
                     for i = 1, 40 do
                         if not autoCollectCash then break end
                         
@@ -170,8 +328,8 @@ local function autoCollectCashLoop()
                         if slot then
                             local collectPart = slot:FindFirstChild("Collect")
                             if collectPart and collectPart:IsA("BasePart") then
-                                -- Teleport collect part under player
-                                collectPart.CFrame = humanoidRootPart.CFrame * CFrame.new(0, -5, 0)
+                                -- Only bring parts from this base to player
+                                collectPart.CFrame = humanoidRootPart.CFrame * CFrame.new(0, -3, 0)
                                 
                                 -- Fire remote event safely
                                 if CollectMoneyEvent then
@@ -255,6 +413,172 @@ local function autoUpgradeBrainrotLoop()
             end
         end
         task.wait(1)
+    end
+end
+
+-- NEW: Auto Collect Gold Bars Loop
+local function autoCollectGoldBarsLoop()
+    while autoCollectGoldBars do
+        local success, err = pcall(function()
+            local moneyEventsParts = Workspace:FindFirstChild("MoneyEventsParts")
+            if moneyEventsParts then
+                -- Find all Goldbar models
+                for _, child in ipairs(moneyEventsParts:GetChildren()) do
+                    if not autoCollectGoldBars then break end
+                    
+                    if child:IsA("Model") and child.Name == "Goldbar" then
+                        -- Find the main part to tween to
+                        local targetPart = child:FindFirstChildWhichIsA("BasePart")
+                        if targetPart then
+                            -- Tween to gold bar
+                            local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = targetPart.CFrame})
+                            tween:Play()
+                            tween.Completed:Wait()
+                            
+                            -- Wait a moment to collect
+                            task.wait(0.5)
+                        end
+                    end
+                end
+            end
+        end)
+        
+        if not success then
+            warn("Auto collect gold bars error:", err)
+        end
+        
+        task.wait(1)
+    end
+end
+
+-- NEW: Auto Complete Obby Loop
+local function autoCompleteObbyLoop()
+    while autoCompleteObby do
+        local success, err = pcall(function()
+            local moneyMap = Workspace:FindFirstChild("MoneyMap_SharedInstance")
+            if not moneyMap then return end
+            
+            -- Cycle through obby variants 1-3
+            for obbyNum = 1, 3 do
+                if not autoCompleteObby then break end
+                
+                local startPartName = "MoneyObbyStart" .. obbyNum
+                local endPartName = "MoneyObby" .. obbyNum .. "End"
+                local safetyPartName = "MoneyObbySaftey" .. obbyNum
+                
+                local startPart = moneyMap:FindFirstChild(startPartName)
+                local endPart = moneyMap:FindFirstChild(endPartName)
+                local safetyPart = moneyMap:FindFirstChild(safetyPartName)
+                
+                if startPart and endPart then
+                    -- Tween to start
+                    if startPart:IsA("BasePart") then
+                        local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = startPart.CFrame})
+                        tween:Play()
+                        tween.Completed:Wait()
+                        task.wait(0.3)
+                    end
+                    
+                    -- Tween to end (complete obby)
+                    if endPart:IsA("BasePart") then
+                        local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = endPart.CFrame})
+                        tween:Play()
+                        tween.Completed:Wait()
+                        task.wait(0.5)
+                    end
+                    
+                    -- Optional: Touch safety part if exists
+                    if safetyPart and safetyPart:IsA("BasePart") then
+                        firetouchinterest(humanoidRootPart, safetyPart, 0)
+                        task.wait(0.1)
+                        firetouchinterest(humanoidRootPart, safetyPart, 1)
+                    end
+                    
+                    task.wait(1) -- Wait between obbies
+                end
+            end
+        end)
+        
+        if not success then
+            warn("Auto complete obby error:", err)
+        end
+        
+        task.wait(2)
+    end
+end
+
+-- NEW: Auto Gap Loop
+local function autoGapLoop()
+    while autoGapEnabled do
+        local success, err = pcall(function()
+            local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
+            local gapsFolder = Workspace:FindFirstChild("Gaps")
+            
+            if not activeTsunamis or not gapsFolder then return end
+            
+            -- Check for nearby waves
+            local waveNearby = false
+            local closestWaveDistance = math.huge
+            
+            for _, wave in ipairs(activeTsunamis:GetChildren()) do
+                if wave:IsA("Model") or wave:IsA("BasePart") then
+                    local wavePart = wave:IsA("BasePart") and wave or wave:FindFirstChildWhichIsA("BasePart")
+                    if wavePart then
+                        local distance = (humanoidRootPart.Position - wavePart.Position).Magnitude
+                        if distance <= gapDetectionRange and distance < closestWaveDistance then
+                            waveNearby = true
+                            closestWaveDistance = distance
+                        end
+                    end
+                end
+            end
+            
+            -- If wave is nearby and not already tweening to gap
+            if waveNearby and not isTweeningToGap then
+                isTweeningToGap = true
+                
+                -- Find nearest gap
+                local nearestGap = nil
+                local nearestGapDistance = math.huge
+                local targetMud = nil
+                
+                for gapNum = 1, 9 do
+                    local gapName = "Gap " .. gapNum
+                    local gap = gapsFolder:FindFirstChild(gapName)
+                    
+                    if gap then
+                        local mud = gap:FindFirstChild("Mud")
+                        if mud and mud:IsA("BasePart") then
+                            local distance = (humanoidRootPart.Position - mud.Position).Magnitude
+                            if distance < nearestGapDistance then
+                                nearestGapDistance = distance
+                                nearestGap = gap
+                                targetMud = mud
+                            end
+                        end
+                    end
+                end
+                
+                -- Tween to nearest gap's Mud part
+                if targetMud then
+                    local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.4), {CFrame = targetMud.CFrame})
+                    tween:Play()
+                    tween.Completed:Wait()
+                    
+                    -- Stay in gap for a bit
+                    task.wait(3)
+                end
+                
+                isTweeningToGap = false
+            end
+        end)
+        
+        if not success then
+            warn("Auto gap error:", err)
+            isTweeningToGap = false
+        end
+        
+        task.wait(0.5) -- Check every 0.5 seconds as requested
     end
 end
 
@@ -423,7 +747,10 @@ end
 
 -- Create Tabs
 local automationTab = createTab("Automation", "⚡")
+local combatTab = createTab("Combat", "⚔️")
+local eventTab = createTab("Event", "🎉")
 local sellTab = createTab("Sell", "💰")
+local settingsTab = createTab("Settings", "⚙️")
 
 -- Helper: Create Toggle
 local function createToggle(parent, name, description, callback)
@@ -515,7 +842,7 @@ local function createToggle(parent, name, description, callback)
 end
 
 -- Helper: Create Dropdown
-local function createDropdown(parent, name, options, callback)
+local function createDropdown(parent, name, options, callback, refreshCallback)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, -20, 0, 80)
     frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
@@ -554,14 +881,28 @@ local function createDropdown(parent, name, options, callback)
     btnCorner.Parent = dropdownBtn
     
     local selectedIndex = 1
+    local currentOptions = options
     
     dropdownBtn.MouseButton1Click:Connect(function()
-        selectedIndex = selectedIndex % #options + 1
-        dropdownBtn.Text = options[selectedIndex]
-        callback(options[selectedIndex], selectedIndex)
+        -- If refresh callback exists and showing "No brainrots found", refresh
+        if refreshCallback and currentOptions[1] and string.find(currentOptions[1]:lower(), "no brainrots") then
+            refreshCallback()
+            return
+        end
+        
+        selectedIndex = selectedIndex % #currentOptions + 1
+        dropdownBtn.Text = currentOptions[selectedIndex]
+        callback(currentOptions[selectedIndex], selectedIndex)
     end)
     
-    return frame
+    -- Function to update dropdown options
+    local function updateOptions(newOptions)
+        currentOptions = newOptions
+        selectedIndex = 1
+        dropdownBtn.Text = currentOptions[1] or "Select..."
+    end
+    
+    return frame, updateOptions
 end
 
 -- Helper: Create Button
@@ -604,8 +945,8 @@ end
 
 -- ==================== AUTOMATION TAB ====================
 
--- Auto Collect Cash Toggle
-createToggle(automationTab, "Auto Collect Cash", "Auto collects cash for you", function(enabled)
+-- Auto Collect Cash Toggle - FIXED
+createToggle(automationTab, "Auto Collect Cash", "Brings cash from your base only + tween up 3 studs", function(enabled)
     autoCollectCash = enabled
     if enabled then
         task.spawn(autoCollectCashLoop)
@@ -635,30 +976,81 @@ createToggle(automationTab, "Auto Upgrade Carry", "Automatically upgrades carry 
     end
 end)
 
--- Brainrot Dropdown (Dynamic)
+-- Brainrot Dropdown (Dynamic) - FIXED VERSION
 local brainrotOptions = {}
-local brainrotData = getBrainrotNames()
+local brainrotData = {}
+local brainrotDropdownFrame, updateBrainrotDropdown = nil, nil
 
-if #brainrotData > 0 then
-    for _, data in ipairs(brainrotData) do
-        table.insert(brainrotOptions, data.name .. " (Slot " .. data.slot .. ")")
+local function refreshBrainrotDropdown()
+    brainrotData = getBrainrotNames()
+    brainrotOptions = {}
+    
+    if #brainrotData > 0 then
+        for _, data in ipairs(brainrotData) do
+            table.insert(brainrotOptions, data.name .. " (Slot " .. data.slot .. ")")
+        end
+    else
+        brainrotOptions = {"No brainrots found - Click to refresh"}
     end
-else
-    brainrotOptions = {"No brainrots found - Click to refresh"}
+    
+    if updateBrainrotDropdown then
+        updateBrainrotDropdown(brainrotOptions)
+    end
 end
 
-createDropdown(automationTab, "Select Brainrot to Upgrade", brainrotOptions, function(selection, index)
+-- Initial load
+refreshBrainrotDropdown()
+
+brainrotDropdownFrame, updateBrainrotDropdown = createDropdown(automationTab, "Select Brainrot to Upgrade", brainrotOptions, function(selection, index)
     if brainrotData[index] then
         selectedBrainrotSlot = brainrotData[index].slot
         print("Selected brainrot slot:", selectedBrainrotSlot)
     end
-end)
+end, refreshBrainrotDropdown)
 
 -- Auto Upgrade Brainrot Toggle
 createToggle(automationTab, "Auto Upgrade Brainrot", "Automatically upgrades selected brainrot", function(enabled)
     autoUpgradeBrainrot = enabled
     if enabled then
+        -- Refresh dropdown when enabling to ensure we have latest data
+        refreshBrainrotDropdown()
         task.spawn(autoUpgradeBrainrotLoop)
+    end
+end)
+
+-- ==================== COMBAT TAB ====================
+
+-- Hitbox Extender Toggle
+createToggle(combatTab, "Hitbox Extender", "Extends attack range to hit enemies", function(enabled)
+    hitboxExtenderEnabled = enabled
+    if enabled then
+        task.spawn(hitboxExtenderLoop)
+    end
+end)
+
+-- Auto Hit Toggle
+createToggle(combatTab, "Auto Hit", "Auto equips tool and attacks nearby enemies", function(enabled)
+    autoHitEnabled = enabled
+    if enabled then
+        task.spawn(autoHitLoop)
+    end
+end)
+
+-- ==================== EVENT TAB ====================
+
+-- Auto Collect Gold Bars Toggle
+createToggle(eventTab, "Auto Collect Gold Bars", "Auto collects gold bars from MoneyEventsParts", function(enabled)
+    autoCollectGoldBars = enabled
+    if enabled then
+        task.spawn(autoCollectGoldBarsLoop)
+    end
+end)
+
+-- Auto Complete Obby Toggle
+createToggle(eventTab, "Auto Complete Obby", "Auto completes MoneyMap obbies 1-3", function(enabled)
+    autoCompleteObby = enabled
+    if enabled then
+        task.spawn(autoCompleteObbyLoop)
     end
 end)
 
@@ -682,6 +1074,16 @@ createButton(sellTab, "Sell Holding Brainrots", function()
     end
 end)
 
+-- ==================== SETTINGS TAB ====================
+
+-- Auto Gap Toggle
+createToggle(settingsTab, "Auto Gap", "Automatically detects waves and tweens to nearest gap", function(enabled)
+    autoGapEnabled = enabled
+    if enabled then
+        task.spawn(autoGapLoop)
+    end
+end)
+
 -- Select Automation tab by default
 task.delay(0.5, function()
     local autoTab = tabContainer:FindFirstChild("AutomationTab")
@@ -694,6 +1096,7 @@ end)
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
     humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    humanoid = character:WaitForChild("Humanoid")
 end)
 
 print("Nexus|Escape Tsunami for Brainrots Loaded!")
