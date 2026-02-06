@@ -1,30 +1,61 @@
 --[[
-    Nexus|Escape Tsunami for Brainrots
-    Auto Farm Features: Cash Collection, Speed Upgrade, Carry Upgrade, Brainrot Upgrade, Selling
+    Nexus|Escape Tsunami for Brainrots - Fixed Version
 ]]
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-local character = player.Character or player.CharacterAdded:Wait()
+
+-- Wait for character properly
+local character = player.Character
+if not character then
+    character = player.CharacterAdded:Wait()
+end
+
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 
--- Remote Events/Functions
-local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-local RemoteFunctions = ReplicatedStorage:WaitForChild("RemoteFunctions")
+-- Safely get Remotes with error handling
+local function getRemote(path, name)
+    local success, result = pcall(function()
+        local remote = path:WaitForChild(name, 5)
+        return remote
+    end)
+    
+    if success and result then
+        print("Found remote:", name)
+        return result
+    else
+        warn("Remote not found:", name)
+        return nil
+    end
+end
 
-local CollectMoneyEvent = RemoteEvents:WaitForChild("CollectMoney")
-local UpgradeSpeedFunction = RemoteFunctions:WaitForChild("UpgradeSpeed")
-local UpgradeCarryFunction = RemoteFunctions:WaitForChild("UpgradeCarry")
-local SellAllFunction = RemoteFunctions:WaitForChild("SellAll")
-local SellToolFunction = RemoteFunctions:WaitForChild("SellTool")
-local UpgradeBrainrotFunction = RemoteFunctions:WaitForChild("UpgradeBrainrot")
+-- Get Remote Events/Functions safely
+local RemoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+local RemoteFunctions = ReplicatedStorage:FindFirstChild("RemoteFunctions")
+
+if not RemoteEvents then
+    warn("RemoteEvents folder not found!")
+    RemoteEvents = ReplicatedStorage
+end
+
+if not RemoteFunctions then
+    warn("RemoteFunctions folder not found!")
+    RemoteFunctions = ReplicatedStorage
+end
+
+-- Get remotes safely
+local CollectMoneyEvent = getRemote(RemoteEvents, "CollectMoney")
+local UpgradeSpeedFunction = getRemote(RemoteFunctions, "UpgradeSpeed")
+local UpgradeCarryFunction = getRemote(RemoteFunctions, "UpgradeCarry")
+local SellAllFunction = getRemote(RemoteFunctions, "SellAll")
+local SellToolFunction = getRemote(RemoteFunctions, "SellTool")
+local UpgradeBrainrotFunction = getRemote(RemoteFunctions, "UpgradeBrainrot")
 
 -- Configuration
 local CONFIG = {
@@ -34,7 +65,6 @@ local CONFIG = {
         BackgroundTransparency = 0.08,
         Sidebar = Color3.fromRGB(35, 35, 40),
         Accent = Color3.fromRGB(88, 101, 242),
-        CyanStroke = Color3.fromRGB(100, 200, 255),
         Success = Color3.fromRGB(87, 242, 135),
         Danger = Color3.fromRGB(255, 100, 100),
         White = Color3.fromRGB(255, 255, 255),
@@ -55,19 +85,32 @@ local selectedBrainrotSlot = nil
 
 -- Get Player Base
 local function getPlayerBase()
-    local bases = Workspace:WaitForChild("Bases")
+    local bases = Workspace:FindFirstChild("Bases")
+    if not bases then
+        warn("Bases folder not found in Workspace")
+        return nil
+    end
+    
     local closestBase = nil
     local closestDistance = math.huge
     
     for _, base in ipairs(bases:GetChildren()) do
         if base:IsA("Model") or base:IsA("Folder") then
-            -- Check if this base belongs to player (look for player identifier)
             local slots = base:FindFirstChild("Slots")
             if slots then
-                -- Check distance to base
-                local basePart = base:FindFirstChildWhichIsA("BasePart") or base:FindFirstChildOfClass("Model")
-                if basePart then
-                    local distance = (humanoidRootPart.Position - basePart:GetPivot().Position).Magnitude
+                -- Try to find a part to measure distance
+                local targetPart = nil
+                
+                -- Look for PrimaryPart first
+                if base:IsA("Model") and base.PrimaryPart then
+                    targetPart = base.PrimaryPart
+                else
+                    -- Find any BasePart
+                    targetPart = base:FindFirstChildWhichIsA("BasePart", true)
+                end
+                
+                if targetPart then
+                    local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
                     if distance < closestDistance then
                         closestDistance = distance
                         closestBase = base
@@ -85,17 +128,23 @@ local function getBrainrotNames()
     local brainrots = {}
     local base = getPlayerBase()
     
-    if not base then return brainrots end
+    if not base then 
+        warn("No base found")
+        return brainrots 
+    end
     
     local slots = base:FindFirstChild("Slots")
-    if not slots then return brainrots end
+    if not slots then 
+        warn("No Slots folder found in base")
+        return brainrots 
+    end
     
     for i = 1, 40 do
         local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
         if slot then
             -- Look for brainrot model inside slot
             for _, child in ipairs(slot:GetChildren()) do
-                if child:IsA("Model") and child.Name ~= "RootPart" then
+                if child:IsA("Model") and child.Name ~= "RootPart" and child.Name ~= "Collect" then
                     table.insert(brainrots, {name = child.Name, slot = i})
                     break
                 end
@@ -106,77 +155,104 @@ local function getBrainrotNames()
     return brainrots
 end
 
--- Auto Collect Cash Function
+-- Auto Collect Cash Function - FIXED
 local function autoCollectCashLoop()
     while autoCollectCash do
-        local base = getPlayerBase()
-        if base then
-            local slots = base:FindFirstChild("Slots")
-            if slots then
-                for i = 1, 40 do
-                    if not autoCollectCash then break end
-                    
-                    local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
-                    if slot then
-                        local collectPart = slot:FindFirstChild("Collect")
-                        if collectPart and collectPart:IsA("BasePart") then
-                            -- Teleport collect part under player
-                            local originalPos = collectPart.Position
-                            collectPart.CFrame = humanoidRootPart.CFrame * CFrame.new(0, -3, 0)
-                            
-                            -- Fire remote event
-                            CollectMoneyEvent:FireServer()
-                            
-                            task.wait(0.5)
-                            
-                            -- Optional: return to original position (or keep it)
-                            -- collectPart.Position = originalPos
+        local success, err = pcall(function()
+            local base = getPlayerBase()
+            if base then
+                local slots = base:FindFirstChild("Slots")
+                if slots then
+                    for i = 1, 40 do
+                        if not autoCollectCash then break end
+                        
+                        local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
+                        if slot then
+                            local collectPart = slot:FindFirstChild("Collect")
+                            if collectPart and collectPart:IsA("BasePart") then
+                                -- Teleport collect part under player
+                                collectPart.CFrame = humanoidRootPart.CFrame * CFrame.new(0, -5, 0)
+                                
+                                -- Fire remote event safely
+                                if CollectMoneyEvent then
+                                    CollectMoneyEvent:FireServer()
+                                end
+                                
+                                task.wait(0.3)
+                            end
                         end
                     end
                 end
             end
+        end)
+        
+        if not success then
+            warn("Auto collect error:", err)
         end
+        
         task.wait(0.1)
     end
 end
 
--- Auto Upgrade Speed Loop
+-- Auto Upgrade Speed Loop - FIXED
 local function autoUpgradeSpeedLoop()
     while autoUpgradeSpeed do
-        local success, result = pcall(function()
-            return UpgradeSpeedFunction:InvokeServer(selectedSpeedAmount)
-        end)
+        if UpgradeSpeedFunction then
+            local success, err = pcall(function()
+                return UpgradeSpeedFunction:InvokeServer(selectedSpeedAmount)
+            end)
+            
+            if not success then
+                warn("Upgrade speed error:", err)
+            end
+        end
         task.wait(1)
     end
 end
 
--- Auto Upgrade Carry Loop
+-- Auto Upgrade Carry Loop - FIXED
 local function autoUpgradeCarryLoop()
     while autoUpgradeCarry do
-        local success, result = pcall(function()
-            return UpgradeCarryFunction:InvokeServer()
-        end)
+        if UpgradeCarryFunction then
+            local success, err = pcall(function()
+                return UpgradeCarryFunction:InvokeServer()
+            end)
+            
+            if not success then
+                warn("Upgrade carry error:", err)
+            end
+        end
         task.wait(1)
     end
 end
 
--- Auto Sell Inventory Loop
+-- Auto Sell Inventory Loop - FIXED
 local function autoSellInventoryLoop()
     while autoSellInventory do
-        local success, result = pcall(function()
-            return SellAllFunction:InvokeServer()
-        end)
+        if SellAllFunction then
+            local success, err = pcall(function()
+                return SellAllFunction:InvokeServer()
+            end)
+            
+            if not success then
+                warn("Sell all error:", err)
+            end
+        end
         task.wait(2)
     end
 end
 
--- Auto Upgrade Brainrot Loop
+-- Auto Upgrade Brainrot Loop - FIXED
 local function autoUpgradeBrainrotLoop()
     while autoUpgradeBrainrot do
-        if selectedBrainrotSlot then
-            local success, result = pcall(function()
+        if UpgradeBrainrotFunction and selectedBrainrotSlot then
+            local success, err = pcall(function()
                 return UpgradeBrainrotFunction:InvokeServer(selectedBrainrotSlot)
             end)
+            
+            if not success then
+                warn("Upgrade brainrot error:", err)
+            end
         end
         task.wait(1)
     end
@@ -201,7 +277,6 @@ mainFrame.Active = true
 mainFrame.ClipsDescendants = true
 mainFrame.Parent = screenGui
 
--- White Stroke
 local mainStroke = Instance.new("UIStroke")
 mainStroke.Color = CONFIG.COLORS.White
 mainStroke.Thickness = 1.2
@@ -227,7 +302,7 @@ titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.Text = CONFIG.TITLE
 titleLabel.TextColor3 = CONFIG.COLORS.White
-titleLabel.TextSize = 18
+titleLabel.TextSize = 16
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = titleBar
 
@@ -261,7 +336,7 @@ local sidebarCorner = Instance.new("UICorner")
 sidebarCorner.CornerRadius = UDim.new(0, 16)
 sidebarCorner.Parent = sidebar
 
--- Tab Buttons Container
+-- Tab Container
 local tabContainer = Instance.new("Frame")
 tabContainer.Name = "TabContainer"
 tabContainer.Size = UDim2.new(1, -20, 1, -20)
@@ -275,7 +350,7 @@ tabList.SortOrder = Enum.SortOrder.LayoutOrder
 tabList.Padding = UDim.new(0, 8)
 tabList.Parent = tabContainer
 
--- Content Frames Container
+-- Content Container
 local contentContainer = Instance.new("Frame")
 contentContainer.Name = "ContentContainer"
 contentContainer.Size = UDim2.new(1, -220, 1, -70)
@@ -283,7 +358,6 @@ contentContainer.Position = UDim2.new(0, 210, 0, 60)
 contentContainer.BackgroundTransparency = 1
 contentContainer.Parent = mainFrame
 
--- Current Tab Tracker
 local currentTab = nil
 
 -- Create Tab Function
@@ -306,7 +380,6 @@ local function createTab(name, icon)
     tabCorner.CornerRadius = UDim.new(0, 10)
     tabCorner.Parent = tabBtn
     
-    -- Content Frame
     local contentFrame = Instance.new("ScrollingFrame")
     contentFrame.Name = name .. "Content"
     contentFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -321,16 +394,13 @@ local function createTab(name, icon)
     listLayout.Padding = UDim.new(0, 10)
     listLayout.Parent = contentFrame
     
-    -- Tab Switch Logic
     tabBtn.MouseButton1Click:Connect(function()
         if currentTab == contentFrame then return end
         
-        -- Hide current
         if currentTab then
             currentTab.Visible = false
         end
         
-        -- Reset all tab colors
         for _, child in ipairs(tabContainer:GetChildren()) do
             if child:IsA("TextButton") then
                 TweenService:Create(child, TweenInfo.new(0.2), {
@@ -340,29 +410,12 @@ local function createTab(name, icon)
             end
         end
         
-        -- Show new tab
         currentTab = contentFrame
         contentFrame.Visible = true
         TweenService:Create(tabBtn, TweenInfo.new(0.2), {
             BackgroundColor3 = CONFIG.COLORS.Accent,
             TextColor3 = CONFIG.COLORS.White
         }):Play()
-    end)
-    
-    tabBtn.MouseEnter:Connect(function()
-        if currentTab ~= contentFrame then
-            TweenService:Create(tabBtn, TweenInfo.new(0.2), {
-                BackgroundColor3 = CONFIG.COLORS.Hover
-            }):Play()
-        end
-    end)
-    
-    tabBtn.MouseLeave:Connect(function()
-        if currentTab ~= contentFrame then
-            TweenService:Create(tabBtn, TweenInfo.new(0.2), {
-                BackgroundColor3 = CONFIG.COLORS.Background
-            }):Play()
-        end
     end)
     
     return contentFrame
@@ -372,7 +425,7 @@ end
 local automationTab = createTab("Automation", "⚡")
 local sellTab = createTab("Sell", "💰")
 
--- Helper: Create Toggle Button
+-- Helper: Create Toggle
 local function createToggle(parent, name, description, callback)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, -20, 0, 70)
@@ -407,7 +460,6 @@ local function createToggle(parent, name, description, callback)
     desc.TextXAlignment = Enum.TextXAlignment.Left
     desc.Parent = frame
     
-    -- Toggle Switch
     local toggle = Instance.new("Frame")
     toggle.Size = UDim2.new(0, 50, 0, 26)
     toggle.Position = UDim2.new(1, -65, 0.5, -13)
@@ -432,26 +484,30 @@ local function createToggle(parent, name, description, callback)
     
     local enabled = false
     
-    frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            enabled = not enabled
-            callback(enabled)
-            
-            if enabled then
-                TweenService:Create(toggle, TweenInfo.new(0.2), {
-                    BackgroundColor3 = CONFIG.COLORS.Success
-                }):Play()
-                TweenService:Create(knob, TweenInfo.new(0.2), {
-                    Position = UDim2.new(0, 26, 0.5, -11)
-                }):Play()
-            else
-                TweenService:Create(toggle, TweenInfo.new(0.2), {
-                    BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-                }):Play()
-                TweenService:Create(knob, TweenInfo.new(0.2), {
-                    Position = UDim2.new(0, 2, 0.5, -11)
-                }):Play()
-            end
+    local clickBtn = Instance.new("TextButton")
+    clickBtn.Size = UDim2.new(1, 0, 1, 0)
+    clickBtn.BackgroundTransparency = 1
+    clickBtn.Text = ""
+    clickBtn.Parent = frame
+    
+    clickBtn.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        callback(enabled)
+        
+        if enabled then
+            TweenService:Create(toggle, TweenInfo.new(0.2), {
+                BackgroundColor3 = CONFIG.COLORS.Success
+            }):Play()
+            TweenService:Create(knob, TweenInfo.new(0.2), {
+                Position = UDim2.new(0, 26, 0.5, -11)
+            }):Play()
+        else
+            TweenService:Create(toggle, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            }):Play()
+            TweenService:Create(knob, TweenInfo.new(0.2), {
+                Position = UDim2.new(0, 2, 0.5, -11)
+            }):Play()
         end
     end)
     
@@ -482,14 +538,13 @@ local function createDropdown(parent, name, options, callback)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = frame
     
-    -- Dropdown Button
     local dropdownBtn = Instance.new("TextButton")
     dropdownBtn.Size = UDim2.new(1, -30, 0, 30)
     dropdownBtn.Position = UDim2.new(0, 15, 0, 40)
     dropdownBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
     dropdownBtn.BorderSizePixel = 0
     dropdownBtn.Font = Enum.Font.Gotham
-    dropdownBtn.Text = "Select..."
+    dropdownBtn.Text = options[1] or "Select..."
     dropdownBtn.TextColor3 = CONFIG.COLORS.Gray
     dropdownBtn.TextSize = 12
     dropdownBtn.Parent = frame
@@ -498,23 +553,18 @@ local function createDropdown(parent, name, options, callback)
     btnCorner.CornerRadius = UDim.new(0, 8)
     btnCorner.Parent = dropdownBtn
     
-    local selected = nil
+    local selectedIndex = 1
     
     dropdownBtn.MouseButton1Click:Connect(function()
-        -- Simple dropdown - cycle through options
-        if not selected then
-            selected = 1
-        else
-            selected = selected % #options + 1
-        end
-        dropdownBtn.Text = options[selected]
-        callback(options[selected])
+        selectedIndex = selectedIndex % #options + 1
+        dropdownBtn.Text = options[selectedIndex]
+        callback(options[selectedIndex], selectedIndex)
     end)
     
     return frame
 end
 
--- Helper: Create Normal Button
+-- Helper: Create Button
 local function createButton(parent, name, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -20, 0, 45)
@@ -542,7 +592,12 @@ local function createButton(parent, name, callback)
         }):Play()
     end)
     
-    btn.MouseButton1Click:Connect(callback)
+    btn.MouseButton1Click:Connect(function()
+        local success, err = pcall(callback)
+        if not success then
+            warn("Button error:", err)
+        end
+    end)
     
     return btn
 end
@@ -558,10 +613,10 @@ createToggle(automationTab, "Auto Collect Cash", "Auto collects cash for you", f
 end)
 
 -- Speed Upgrade Dropdown
-createDropdown(automationTab, "Auto Upgrade Speed", {"+1 Speed", "+5 Speed", "+10 Speed"}, function(selection)
-    if selection == "+1 Speed" then selectedSpeedAmount = 1
-    elseif selection == "+5 Speed" then selectedSpeedAmount = 5
-    elseif selection == "+10 Speed" then selectedSpeedAmount = 10 end
+createDropdown(automationTab, "Auto Upgrade Speed", {"+1 Speed", "+5 Speed", "+10 Speed"}, function(selection, index)
+    if index == 1 then selectedSpeedAmount = 1
+    elseif index == 2 then selectedSpeedAmount = 5
+    elseif index == 3 then selectedSpeedAmount = 10 end
 end)
 
 -- Auto Upgrade Speed Toggle
@@ -583,19 +638,19 @@ end)
 -- Brainrot Dropdown (Dynamic)
 local brainrotOptions = {}
 local brainrotData = getBrainrotNames()
-for _, data in ipairs(brainrotData) do
-    table.insert(brainrotOptions, data.name .. " (Slot " .. data.slot .. ")")
+
+if #brainrotData > 0 then
+    for _, data in ipairs(brainrotData) do
+        table.insert(brainrotOptions, data.name .. " (Slot " .. data.slot .. ")")
+    end
+else
+    brainrotOptions = {"No brainrots found - Click to refresh"}
 end
 
-if #brainrotOptions == 0 then
-    brainrotOptions = {"No brainrots found"}
-end
-
-createDropdown(automationTab, "Select Brainrot to Upgrade", brainrotOptions, function(selection)
-    -- Parse slot number from selection
-    local slot = string.match(selection, "Slot (%d+)")
-    if slot then
-        selectedBrainrotSlot = tonumber(slot)
+createDropdown(automationTab, "Select Brainrot to Upgrade", brainrotOptions, function(selection, index)
+    if brainrotData[index] then
+        selectedBrainrotSlot = brainrotData[index].slot
+        print("Selected brainrot slot:", selectedBrainrotSlot)
     end
 end)
 
@@ -619,17 +674,20 @@ end)
 
 -- Sell Holding Brainrots Button
 createButton(sellTab, "Sell Holding Brainrots", function()
-    local success, result = pcall(function()
-        return SellToolFunction:InvokeServer()
-    end)
-    if success then
+    if SellToolFunction then
+        SellToolFunction:InvokeServer()
         print("Sold holding brainrots!")
+    else
+        warn("SellTool remote not found!")
     end
 end)
 
 -- Select Automation tab by default
-task.delay(0.1, function()
-    automationTab.Parent:FindFirstChild("AutomationTab"):MouseButton1Click:Fire()
+task.delay(0.5, function()
+    local autoTab = tabContainer:FindFirstChild("AutomationTab")
+    if autoTab then
+        autoTab.MouseButton1Click:Fire()
+    end
 end)
 
 -- Character respawn handler
