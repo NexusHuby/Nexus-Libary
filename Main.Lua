@@ -1,7 +1,7 @@
 --[[
-    Premium Key System UI - Updated Design
+    Premium Key System UI - Animated Gradient Background + Close Button
     Created by: Assistant
-    Features: Gradient buttons, stroke effects, centered footer, no shadows
+    Features: Smooth gradient transitions, rotating gradients, close button
 ]]
 
 local Players = game:GetService("Players")
@@ -16,17 +16,28 @@ local CONFIG = {
     COLORS = {
         Background = Color3.fromRGB(30, 30, 35),
         InputBg = Color3.fromRGB(45, 45, 55),
-        -- Gradient colors for Get Key button (Cool gray to slate)
         GetKeyStart = Color3.fromRGB(80, 80, 90),
         GetKeyEnd = Color3.fromRGB(50, 50, 60),
-        -- Gradient colors for Verify button (Discord purple gradient)
         VerifyStart = Color3.fromRGB(120, 130, 255),
         VerifyEnd = Color3.fromRGB(88, 101, 242),
         Accent = Color3.fromRGB(88, 101, 242),
         Success = Color3.fromRGB(87, 242, 135),
         White = Color3.fromRGB(255, 255, 255),
         Stroke = Color3.fromRGB(70, 70, 80),
-        InputStroke = Color3.fromRGB(90, 90, 100)
+        InputStroke = Color3.fromRGB(90, 90, 100),
+        CloseButton = Color3.fromRGB(200, 200, 200),
+        CloseButtonHover = Color3.fromRGB(255, 100, 100)
+    },
+    -- Gradient presets for background animation [Color1, Color2, Rotation]
+    GRADIENT_PRESETS = {
+        {Color3.fromRGB(40, 40, 50), Color3.fromRGB(25, 25, 30), 45},      -- Cool dark
+        {Color3.fromRGB(35, 35, 45), Color3.fromRGB(45, 40, 55), 90},      -- Purple tint
+        {Color3.fromRGB(30, 35, 45), Color3.fromRGB(40, 35, 50), 135},     -- Blue tint
+        {Color3.fromRGB(45, 40, 45), Color3.fromRGB(30, 30, 35), 180},     -- Warm dark
+        {Color3.fromRGB(35, 40, 45), Color3.fromRGB(45, 45, 55), 225},     -- Cyan tint
+        {Color3.fromRGB(40, 35, 45), Color3.fromRGB(50, 45, 55), 270},     -- Pink tint
+        {Color3.fromRGB(30, 40, 40), Color3.fromRGB(40, 45, 50), 315},     -- Green tint
+        {Color3.fromRGB(45, 45, 50), Color3.fromRGB(30, 30, 35), 360}      -- Back to neutral
     }
 }
 
@@ -37,13 +48,14 @@ screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = playerGui
 
--- Main container (no shadow frame)
+-- Main container
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.Size = UDim2.new(0, 400, 0, 300)
 mainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
 mainFrame.BackgroundColor3 = CONFIG.COLORS.Background
 mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
 mainFrame.Parent = screenGui
 
 -- Main corner radius
@@ -51,24 +63,56 @@ local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 16)
 mainCorner.Parent = mainFrame
 
+-- Animated Background Gradient
+local bgGradient = Instance.new("UIGradient")
+bgGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, CONFIG.GRADIENT_PRESETS[1][1]),
+    ColorSequenceKeypoint.new(1, CONFIG.GRADIENT_PRESETS[1][2])
+})
+bgGradient.Rotation = CONFIG.GRADIENT_PRESETS[1][3]
+bgGradient.Parent = mainFrame
+
 -- Main Frame Stroke
 local mainStroke = Instance.new("UIStroke")
 mainStroke.Color = CONFIG.COLORS.Stroke
 mainStroke.Thickness = 1.5
 mainStroke.Parent = mainFrame
 
--- Subtle gradient overlay for glossy effect
-local gradientFrame = Instance.new("Frame")
-gradientFrame.Name = "Gloss"
-gradientFrame.Size = UDim2.new(1, 0, 0.5, 0)
-gradientFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-gradientFrame.BackgroundTransparency = 0.95
-gradientFrame.BorderSizePixel = 0
-gradientFrame.Parent = mainFrame
+-- Close Button (No background)
+local closeButton = Instance.new("TextButton")
+closeButton.Name = "CloseButton"
+closeButton.Size = UDim2.new(0, 30, 0, 30)
+closeButton.Position = UDim2.new(1, -35, 0, 5)
+closeButton.BackgroundTransparency = 1
+closeButton.BorderSizePixel = 0
+closeButton.Font = Enum.Font.GothamBold
+closeButton.Text = "X"
+closeButton.TextColor3 = CONFIG.COLORS.CloseButton
+closeButton.TextSize = 18
+closeButton.ZIndex = 10
+closeButton.Parent = mainFrame
 
-local gradientCorner = Instance.new("UICorner")
-gradientCorner.CornerRadius = UDim.new(0, 16)
-gradientCorner.Parent = gradientFrame
+-- Glossy overlay (preserves readability)
+local glossOverlay = Instance.new("Frame")
+glossOverlay.Name = "GlossOverlay"
+glossOverlay.Size = UDim2.new(1, 0, 1, 0)
+glossOverlay.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+glossOverlay.BackgroundTransparency = 0.95
+glossOverlay.BorderSizePixel = 0
+glossOverlay.ZIndex = 2
+glossOverlay.Parent = mainFrame
+
+local glossCorner = Instance.new("UICorner")
+glossCorner.CornerRadius = UDim.new(0, 16)
+glossCorner.Parent = glossOverlay
+
+-- Content Container (holds all UI elements above the gradient)
+local contentContainer = Instance.new("Frame")
+contentContainer.Name = "ContentContainer"
+contentContainer.Size = UDim2.new(1, 0, 1, 0)
+contentContainer.BackgroundTransparency = 1
+contentContainer.ZIndex = 5
+contentContainer.Parent = mainFrame
 
 -- Title
 local titleLabel = Instance.new("TextLabel")
@@ -80,7 +124,8 @@ titleLabel.Font = Enum.Font.GothamBold
 titleLabel.Text = "KEY SYSTEM"
 titleLabel.TextColor3 = CONFIG.COLORS.White
 titleLabel.TextSize = 28
-titleLabel.Parent = mainFrame
+titleLabel.ZIndex = 5
+titleLabel.Parent = contentContainer
 
 -- Subtitle
 local subtitleLabel = Instance.new("TextLabel")
@@ -92,7 +137,8 @@ subtitleLabel.Font = Enum.Font.Gotham
 subtitleLabel.Text = "Enter your access key to continue"
 subtitleLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 subtitleLabel.TextSize = 14
-subtitleLabel.Parent = mainFrame
+subtitleLabel.ZIndex = 5
+subtitleLabel.Parent = contentContainer
 
 -- Key input frame
 local inputFrame = Instance.new("Frame")
@@ -101,7 +147,8 @@ inputFrame.Size = UDim2.new(0, 320, 0, 45)
 inputFrame.Position = UDim2.new(0.5, -160, 0, 110)
 inputFrame.BackgroundColor3 = CONFIG.COLORS.InputBg
 inputFrame.BorderSizePixel = 0
-inputFrame.Parent = mainFrame
+inputFrame.ZIndex = 5
+inputFrame.Parent = contentContainer
 
 local inputCorner = Instance.new("UICorner")
 inputCorner.CornerRadius = UDim.new(0, 10)
@@ -120,6 +167,7 @@ inputGloss.Size = UDim2.new(1, 0, 0.5, 0)
 inputGloss.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 inputGloss.BackgroundTransparency = 0.9
 inputGloss.BorderSizePixel = 0
+inputGloss.ZIndex = 6
 inputGloss.Parent = inputFrame
 
 local inputGlossCorner = Instance.new("UICorner")
@@ -139,6 +187,7 @@ keyInput.Text = ""
 keyInput.TextColor3 = CONFIG.COLORS.White
 keyInput.TextSize = 16
 keyInput.ClearTextOnFocus = false
+keyInput.ZIndex = 6
 keyInput.Parent = inputFrame
 
 -- Button container
@@ -147,7 +196,8 @@ buttonContainer.Name = "ButtonContainer"
 buttonContainer.Size = UDim2.new(0, 320, 0, 45)
 buttonContainer.Position = UDim2.new(0.5, -160, 0, 170)
 buttonContainer.BackgroundTransparency = 1
-buttonContainer.Parent = mainFrame
+buttonContainer.ZIndex = 5
+buttonContainer.Parent = contentContainer
 
 -- Get Key Button with Gradient
 local getKeyButton = Instance.new("TextButton")
@@ -161,6 +211,7 @@ getKeyButton.Text = "Get Key"
 getKeyButton.TextColor3 = CONFIG.COLORS.White
 getKeyButton.TextSize = 14
 getKeyButton.AutoButtonColor = false
+getKeyButton.ZIndex = 6
 getKeyButton.Parent = buttonContainer
 
 local getKeyCorner = Instance.new("UICorner")
@@ -194,13 +245,14 @@ verifyButton.Text = "Verify"
 verifyButton.TextColor3 = CONFIG.COLORS.White
 verifyButton.TextSize = 14
 verifyButton.AutoButtonColor = false
+verifyButton.ZIndex = 6
 verifyButton.Parent = buttonContainer
 
 local verifyCorner = Instance.new("UICorner")
 verifyCorner.CornerRadius = UDim.new(0, 10)
 verifyCorner.Parent = verifyButton
 
--- Verify Gradient (Purple gradient)
+-- Verify Gradient
 local verifyGradient = Instance.new("UIGradient")
 verifyGradient.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(0, CONFIG.COLORS.VerifyStart),
@@ -225,21 +277,18 @@ statusLabel.Font = Enum.Font.Gotham
 statusLabel.Text = ""
 statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
 statusLabel.TextSize = 13
-statusLabel.Parent = mainFrame
+statusLabel.ZIndex = 5
+statusLabel.Parent = contentContainer
 
--- Footer text - FIXED CENTERING
+-- Footer text - Centered
 local footerFrame = Instance.new("Frame")
 footerFrame.Name = "Footer"
 footerFrame.Size = UDim2.new(0, 320, 0, 40)
 footerFrame.Position = UDim2.new(0.5, -160, 0, 255)
 footerFrame.BackgroundTransparency = 1
-footerFrame.Parent = mainFrame
+footerFrame.ZIndex = 5
+footerFrame.Parent = contentContainer
 
--- Calculate total width to center properly
--- "The Key is" (60) + space + "100% Free" (70) + space + "in the" (45) + space + "Discord" (55) = roughly 230 + spacing
--- We'll use a more precise centering approach with a single TextLabel using rich text or separate labels with proper positioning
-
--- Alternative: Use a single text label with styled segments using UIListLayout for perfect centering
 local footerContainer = Instance.new("Frame")
 footerContainer.Name = "FooterContainer"
 footerContainer.Size = UDim2.new(1, 0, 1, 0)
@@ -251,10 +300,10 @@ footerList.FillDirection = Enum.FillDirection.Horizontal
 footerList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 footerList.VerticalAlignment = Enum.VerticalAlignment.Center
 footerList.SortOrder = Enum.SortOrder.LayoutOrder
-footerList.Padding = UDim.new(0, 4) -- 4px spacing between elements
+footerList.Padding = UDim.new(0, 4)
 footerList.Parent = footerContainer
 
--- "The Key is" - White
+-- Footer text segments
 local text1 = Instance.new("TextLabel")
 text1.Name = "Text1"
 text1.Size = UDim2.new(0, 0, 1, 0)
@@ -265,9 +314,9 @@ text1.Text = "The Key is"
 text1.TextColor3 = CONFIG.COLORS.White
 text1.TextSize = 14
 text1.LayoutOrder = 1
+text1.ZIndex = 5
 text1.Parent = footerContainer
 
--- "100% Free" - Green
 local textFree = Instance.new("TextLabel")
 textFree.Name = "TextFree"
 textFree.Size = UDim2.new(0, 0, 1, 0)
@@ -278,9 +327,9 @@ textFree.Text = "100% Free"
 textFree.TextColor3 = CONFIG.COLORS.Success
 textFree.TextSize = 14
 textFree.LayoutOrder = 2
+textFree.ZIndex = 5
 textFree.Parent = footerContainer
 
--- "in the" - White
 local text2 = Instance.new("TextLabel")
 text2.Name = "Text2"
 text2.Size = UDim2.new(0, 0, 1, 0)
@@ -291,9 +340,9 @@ text2.Text = "in the"
 text2.TextColor3 = CONFIG.COLORS.White
 text2.TextSize = 14
 text2.LayoutOrder = 3
+text2.ZIndex = 5
 text2.Parent = footerContainer
 
--- "Discord" - Purple
 local textDiscord = Instance.new("TextLabel")
 textDiscord.Name = "TextDiscord"
 textDiscord.Size = UDim2.new(0, 0, 1, 0)
@@ -304,6 +353,7 @@ textDiscord.Text = "Discord"
 textDiscord.TextColor3 = CONFIG.COLORS.Accent
 textDiscord.TextSize = 14
 textDiscord.LayoutOrder = 4
+textDiscord.ZIndex = 5
 textDiscord.Parent = footerContainer
 
 -- Animation Setup
@@ -311,26 +361,107 @@ local TWEEN_INFO = {
     Hover = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
     Click = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
     Float = TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-    Pulse = TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-    Fade = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    GradientShift = TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+    Fade = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    Close = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In)
 }
 
--- Floating animation for main frame
+-- Floating animation
 local floatTween = TweenService:Create(mainFrame, TWEEN_INFO.Float, {
     Position = UDim2.new(0.5, -200, 0.5, -145)
 })
 floatTween:Play()
 
--- Pulse animation for gloss effects
-local glossTween = TweenService:Create(gradientFrame, TWEEN_INFO.Pulse, {
-    BackgroundTransparency = 0.92
-})
-glossTween:Play()
+-- Gradient Animation System
+local currentGradientIndex = 1
+local isGradientAnimating = false
 
--- Button hover effects with gradient animation
+local function animateToNextGradient()
+    if isGradientAnimating then return end
+    isGradientAnimating = true
+    
+    currentGradientIndex = currentGradientIndex + 1
+    if currentGradientIndex > #CONFIG.GRADIENT_PRESETS then
+        currentGradientIndex = 1
+    end
+    
+    local preset = CONFIG.GRADIENT_PRESETS[currentGradientIndex]
+    local color1, color2, rotation = preset[1], preset[2], preset[3]
+    
+    -- Create smooth transition for colors
+    local colorTween = TweenService:Create(bgGradient, TWEEN_INFO.GradientShift, {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, color1),
+            ColorSequenceKeypoint.new(1, color2)
+        }),
+        Rotation = rotation
+    })
+    
+    colorTween.Completed:Connect(function()
+        isGradientAnimating = false
+        -- Wait a bit before next transition
+        task.delay(2, animateToNextGradient)
+    end)
+    
+    colorTween:Play()
+end
+
+-- Start gradient loop
+task.delay(2, animateToNextGradient)
+
+-- Close Button Functionality
+closeButton.MouseEnter:Connect(function()
+    TweenService:Create(closeButton, TWEEN_INFO.Hover, {
+        TextColor3 = CONFIG.COLORS.CloseButtonHover,
+        TextSize = 20
+    }):Play()
+end)
+
+closeButton.MouseLeave:Connect(function()
+    TweenService:Create(closeButton, TWEEN_INFO.Hover, {
+        TextColor3 = CONFIG.COLORS.CloseButton,
+        TextSize = 18
+    }):Play()
+end)
+
+closeButton.MouseButton1Click:Connect(function()
+    -- Close animation
+    TweenService:Create(mainFrame, TWEEN_INFO.Close, {
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Rotation = 10
+    }):Play()
+    
+    -- Fade out all content
+    for _, child in ipairs(mainFrame:GetDescendants()) do
+        if child:IsA("GuiObject") then
+            if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+                TweenService:Create(child, TWEEN_INFO.Close, {
+                    TextTransparency = 1
+                }):Play()
+            end
+            if child:IsA("Frame") then
+                TweenService:Create(child, TWEEN_INFO.Close, {
+                    BackgroundTransparency = 1
+                }):Play()
+            end
+            if child:IsA("UIStroke") then
+                TweenService:Create(child, TWEEN_INFO.Close, {
+                    Transparency = 1
+                }):Play()
+            end
+        end
+    end
+    
+    -- Destroy after animation
+    task.delay(0.4, function()
+        screenGui:Destroy()
+    end)
+end)
+
+-- Button hover effects
 local function setupGradientButtonHover(button, gradient, originalStart, originalEnd, hoverStart, hoverEnd, stroke)
     button.MouseEnter:Connect(function()
-        -- Animate gradient colors
         TweenService:Create(gradient, TWEEN_INFO.Hover, {
             Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, hoverStart),
@@ -338,13 +469,11 @@ local function setupGradientButtonHover(button, gradient, originalStart, origina
             })
         }):Play()
         
-        -- Scale up slightly
         TweenService:Create(button, TWEEN_INFO.Hover, {
             Size = UDim2.new(0, 159, 0, 49),
             Position = button.Position + UDim2.new(0, -2, 0, -2)
         }):Play()
         
-        -- Brighten stroke
         if stroke then
             TweenService:Create(stroke, TWEEN_INFO.Hover, {
                 Transparency = 0.5
@@ -353,7 +482,6 @@ local function setupGradientButtonHover(button, gradient, originalStart, origina
     end)
     
     button.MouseLeave:Connect(function()
-        -- Revert gradient
         TweenService:Create(gradient, TWEEN_INFO.Hover, {
             Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, originalStart),
@@ -361,13 +489,11 @@ local function setupGradientButtonHover(button, gradient, originalStart, origina
             })
         }):Play()
         
-        -- Scale down
         TweenService:Create(button, TWEEN_INFO.Hover, {
             Size = UDim2.new(0, 155, 0, 45),
             Position = button.Position + UDim2.new(0, 2, 0, 2)
         }):Play()
         
-        -- Reset stroke
         if stroke then
             TweenService:Create(stroke, TWEEN_INFO.Hover, {
                 Transparency = 0
@@ -388,13 +514,12 @@ local function setupGradientButtonHover(button, gradient, originalStart, origina
     end)
 end
 
--- Setup hovers for gradient buttons
 setupGradientButtonHover(
     getKeyButton, 
     getKeyGradient, 
     CONFIG.COLORS.GetKeyStart, 
     CONFIG.COLORS.GetKeyEnd,
-    Color3.fromRGB(100, 100, 110), -- Lighter on hover
+    Color3.fromRGB(100, 100, 110),
     Color3.fromRGB(70, 70, 80),
     getKeyStroke
 )
@@ -404,12 +529,12 @@ setupGradientButtonHover(
     verifyGradient, 
     CONFIG.COLORS.VerifyStart, 
     CONFIG.COLORS.VerifyEnd,
-    Color3.fromRGB(150, 160, 255), -- Brighter purple on hover
+    Color3.fromRGB(150, 160, 255),
     Color3.fromRGB(110, 123, 255),
     verifyStroke
 )
 
--- Input field focus effect with stroke animation
+-- Input field focus effect
 keyInput.Focused:Connect(function()
     TweenService:Create(inputFrame, TWEEN_INFO.Hover, {
         BackgroundColor3 = Color3.fromRGB(55, 55, 65)
@@ -454,7 +579,6 @@ verifyButton.MouseButton1Click:Connect(function()
         statusLabel.Text = "Please enter a key!"
         statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
         
-        -- Shake animation
         local originalPos = inputFrame.Position
         for i = 1, 5 do
             inputFrame.Position = originalPos + UDim2.new(0, (i % 2 == 0 and 5 or -5), 0, 0)
@@ -552,7 +676,7 @@ task.delay(0.2, function()
                     TextTransparency = 0
                 }):Play()
             end
-            if child:IsA("Frame") and child.Name ~= "Gloss" and child.Name ~= "InputGloss" then
+            if child:IsA("Frame") and child.Name ~= "GlossOverlay" and child.Name ~= "InputGloss" then
                 local originalTransparency = 0
                 if child.Name == "InputFrame" or child.Name == "GetKeyButton" or child.Name == "VerifyButton" then
                     originalTransparency = 0
