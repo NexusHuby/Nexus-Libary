@@ -1,57 +1,199 @@
 --[[
-    Nexus Main Hub - Fixed Minimize Button
+    Nexus|Escape Tsunami for Brainrots
+    Auto Farm Features: Cash Collection, Speed Upgrade, Carry Upgrade, Brainrot Upgrade, Selling
 ]]
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+
+-- Remote Events/Functions
+local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+local RemoteFunctions = ReplicatedStorage:WaitForChild("RemoteFunctions")
+
+local CollectMoneyEvent = RemoteEvents:WaitForChild("CollectMoney")
+local UpgradeSpeedFunction = RemoteFunctions:WaitForChild("UpgradeSpeed")
+local UpgradeCarryFunction = RemoteFunctions:WaitForChild("UpgradeCarry")
+local SellAllFunction = RemoteFunctions:WaitForChild("SellAll")
+local SellToolFunction = RemoteFunctions:WaitForChild("SellTool")
+local UpgradeBrainrotFunction = RemoteFunctions:WaitForChild("UpgradeBrainrot")
 
 -- Configuration
 local CONFIG = {
-    TITLE = "NEXUS HUB",
-    DISCORD_LINK = "https://discord.gg/yourlink",
+    TITLE = "Nexus|Escape Tsunami for Brainrots",
     COLORS = {
         Background = Color3.fromRGB(25, 25, 30),
         BackgroundTransparency = 0.08,
         Sidebar = Color3.fromRGB(35, 35, 40),
         Accent = Color3.fromRGB(88, 101, 242),
-        White = Color3.fromRGB(255, 255, 255),
+        CyanStroke = Color3.fromRGB(100, 200, 255),
         Success = Color3.fromRGB(87, 242, 135),
-        Warning = Color3.fromRGB(255, 200, 100),
         Danger = Color3.fromRGB(255, 100, 100),
+        White = Color3.fromRGB(255, 255, 255),
         Gray = Color3.fromRGB(180, 180, 180),
         DarkGray = Color3.fromRGB(100, 100, 100),
         Hover = Color3.fromRGB(55, 55, 65)
     }
 }
 
-local LucideIcons = {
-    home = "⌂", zap = "⚡", gamepad = "🎮", code = "❮❯", settings = "⚙",
-    user = "👤", shield = "🛡", check = "✓", x = "✕", minus = "−",
-    menu = "☰", chevronRight = "❯", refresh = "↻", copy = "📋",
-    externalLink = "↗", users = "👥", sparkles = "✨", message = "💬"
-}
+-- State Variables
+local autoCollectCash = false
+local autoUpgradeSpeed = false
+local selectedSpeedAmount = 1
+local autoUpgradeCarry = false
+local autoSellInventory = false
+local autoUpgradeBrainrot = false
+local selectedBrainrotSlot = nil
 
+-- Get Player Base
+local function getPlayerBase()
+    local bases = Workspace:WaitForChild("Bases")
+    local closestBase = nil
+    local closestDistance = math.huge
+    
+    for _, base in ipairs(bases:GetChildren()) do
+        if base:IsA("Model") or base:IsA("Folder") then
+            -- Check if this base belongs to player (look for player identifier)
+            local slots = base:FindFirstChild("Slots")
+            if slots then
+                -- Check distance to base
+                local basePart = base:FindFirstChildWhichIsA("BasePart") or base:FindFirstChildOfClass("Model")
+                if basePart then
+                    local distance = (humanoidRootPart.Position - basePart:GetPivot().Position).Magnitude
+                    if distance < closestDistance then
+                        closestDistance = distance
+                        closestBase = base
+                    end
+                end
+            end
+        end
+    end
+    
+    return closestBase
+end
+
+-- Get All Brainrot Names from Base
+local function getBrainrotNames()
+    local brainrots = {}
+    local base = getPlayerBase()
+    
+    if not base then return brainrots end
+    
+    local slots = base:FindFirstChild("Slots")
+    if not slots then return brainrots end
+    
+    for i = 1, 40 do
+        local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
+        if slot then
+            -- Look for brainrot model inside slot
+            for _, child in ipairs(slot:GetChildren()) do
+                if child:IsA("Model") and child.Name ~= "RootPart" then
+                    table.insert(brainrots, {name = child.Name, slot = i})
+                    break
+                end
+            end
+        end
+    end
+    
+    return brainrots
+end
+
+-- Auto Collect Cash Function
+local function autoCollectCashLoop()
+    while autoCollectCash do
+        local base = getPlayerBase()
+        if base then
+            local slots = base:FindFirstChild("Slots")
+            if slots then
+                for i = 1, 40 do
+                    if not autoCollectCash then break end
+                    
+                    local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
+                    if slot then
+                        local collectPart = slot:FindFirstChild("Collect")
+                        if collectPart and collectPart:IsA("BasePart") then
+                            -- Teleport collect part under player
+                            local originalPos = collectPart.Position
+                            collectPart.CFrame = humanoidRootPart.CFrame * CFrame.new(0, -3, 0)
+                            
+                            -- Fire remote event
+                            CollectMoneyEvent:FireServer()
+                            
+                            task.wait(0.5)
+                            
+                            -- Optional: return to original position (or keep it)
+                            -- collectPart.Position = originalPos
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end
+
+-- Auto Upgrade Speed Loop
+local function autoUpgradeSpeedLoop()
+    while autoUpgradeSpeed do
+        local success, result = pcall(function()
+            return UpgradeSpeedFunction:InvokeServer(selectedSpeedAmount)
+        end)
+        task.wait(1)
+    end
+end
+
+-- Auto Upgrade Carry Loop
+local function autoUpgradeCarryLoop()
+    while autoUpgradeCarry do
+        local success, result = pcall(function()
+            return UpgradeCarryFunction:InvokeServer()
+        end)
+        task.wait(1)
+    end
+end
+
+-- Auto Sell Inventory Loop
+local function autoSellInventoryLoop()
+    while autoSellInventory do
+        local success, result = pcall(function()
+            return SellAllFunction:InvokeServer()
+        end)
+        task.wait(2)
+    end
+end
+
+-- Auto Upgrade Brainrot Loop
+local function autoUpgradeBrainrotLoop()
+    while autoUpgradeBrainrot do
+        if selectedBrainrotSlot then
+            local success, result = pcall(function()
+                return UpgradeBrainrotFunction:InvokeServer(selectedBrainrotSlot)
+            end)
+        end
+        task.wait(1)
+    end
+end
+
+-- Create GUI
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "NexusMainHub"
+screenGui.Name = "NexusBrainrotHub"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = playerGui
 
-local isMinimized = false
-local dragButton = nil
-local savedButtonPosition = nil
-local dragButtonDragging = false -- Track if drag button is being dragged
-
 -- Main Frame
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 700, 0, 450)
-mainFrame.Position = UDim2.new(0.5, -350, 0.5, -225)
+mainFrame.Size = UDim2.new(0, 750, 0, 500)
+mainFrame.Position = UDim2.new(0.5, -375, 0.5, -250)
 mainFrame.BackgroundColor3 = CONFIG.COLORS.Background
 mainFrame.BackgroundTransparency = CONFIG.COLORS.BackgroundTransparency
 mainFrame.BorderSizePixel = 0
@@ -59,6 +201,7 @@ mainFrame.Active = true
 mainFrame.ClipsDescendants = true
 mainFrame.Parent = screenGui
 
+-- White Stroke
 local mainStroke = Instance.new("UIStroke")
 mainStroke.Color = CONFIG.COLORS.White
 mainStroke.Thickness = 1.2
@@ -69,92 +212,24 @@ local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 16)
 mainCorner.Parent = mainFrame
 
--- Background Gradient
-local bgGradient = Instance.new("UIGradient")
-bgGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 45, 60)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(25, 25, 30)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 40, 55))
-})
-bgGradient.Rotation = 45
-bgGradient.Parent = mainFrame
-
-spawn(function()
-    while mainFrame and mainFrame.Parent do
-        for i = 45, 405, 0.5 do
-            if not bgGradient or not bgGradient.Parent then break end
-            bgGradient.Rotation = i % 360
-            task.wait(0.03)
-        end
-    end
-end)
-
--- Glossy Overlay
-local glossOverlay = Instance.new("Frame")
-glossOverlay.Name = "GlossOverlay"
-glossOverlay.Size = UDim2.new(1, 0, 0.6, 0)
-glossOverlay.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-glossOverlay.BackgroundTransparency = 0.95
-glossOverlay.BorderSizePixel = 0
-glossOverlay.Parent = mainFrame
-
-local glossCorner = Instance.new("UICorner")
-glossCorner.CornerRadius = UDim.new(0, 16)
-glossCorner.Parent = glossOverlay
-
--- Drag Main Frame
-local dragging = false
-local dragInput, dragStart, startPos
-
-local function updateDrag(input)
-    local delta = input.Position - dragStart
-    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-end
-
-mainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-mainFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        updateDrag(input)
-    end
-end)
-
--- Top Bar
-local topBar = Instance.new("Frame")
-topBar.Name = "TopBar"
-topBar.Size = UDim2.new(1, 0, 0, 50)
-topBar.BackgroundTransparency = 1
-topBar.Parent = mainFrame
+-- Title Bar
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 50)
+titleBar.BackgroundTransparency = 1
+titleBar.Parent = mainFrame
 
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Name = "Title"
-titleLabel.Size = UDim2.new(0, 200, 1, 0)
+titleLabel.Size = UDim2.new(1, -100, 1, 0)
 titleLabel.Position = UDim2.new(0, 20, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Text = LucideIcons.sparkles .. " " .. CONFIG.TITLE
+titleLabel.Text = CONFIG.TITLE
 titleLabel.TextColor3 = CONFIG.COLORS.White
-titleLabel.TextSize = 20
+titleLabel.TextSize = 18
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = topBar
+titleLabel.Parent = titleBar
 
 -- Close Button
 local closeBtn = Instance.new("TextButton")
@@ -162,243 +237,20 @@ closeBtn.Name = "CloseBtn"
 closeBtn.Size = UDim2.new(0, 32, 0, 32)
 closeBtn.Position = UDim2.new(1, -42, 0.5, -16)
 closeBtn.BackgroundTransparency = 1
-closeBtn.BorderSizePixel = 0
 closeBtn.Font = Enum.Font.GothamBold
-closeBtn.Text = LucideIcons.x
+closeBtn.Text = "✕"
 closeBtn.TextColor3 = CONFIG.COLORS.Danger
 closeBtn.TextSize = 18
-closeBtn.AutoButtonColor = false
-closeBtn.Parent = topBar
-
-local closeOutline = Instance.new("UIStroke")
-closeOutline.Color = CONFIG.COLORS.Danger
-closeOutline.Thickness = 0
-closeOutline.Transparency = 0.5
-closeOutline.Parent = closeBtn
-
-closeBtn.MouseEnter:Connect(function()
-    TweenService:Create(closeBtn, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.White}):Play()
-    TweenService:Create(closeOutline, TweenInfo.new(0.2), {Thickness = 1.5}):Play()
-end)
-
-closeBtn.MouseLeave:Connect(function()
-    TweenService:Create(closeBtn, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Danger}):Play()
-    TweenService:Create(closeOutline, TweenInfo.new(0.2), {Thickness = 0}):Play()
-end)
+closeBtn.Parent = titleBar
 
 closeBtn.MouseButton1Click:Connect(function()
-    TweenService:Create(mainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-        Size = UDim2.new(0, 0, 0, 0),
-        Position = UDim2.new(mainFrame.Position.X.Scale, mainFrame.Position.X.Offset + 350, mainFrame.Position.Y.Scale, mainFrame.Position.Y.Offset + 225),
-        Rotation = -10
-    }):Play()
-    
-    if dragButton then
-        TweenService:Create(dragButton, TweenInfo.new(0.3), {ImageTransparency = 1}):Play()
-    end
-    
-    task.delay(0.4, function()
-        screenGui:Destroy()
-    end)
+    screenGui:Destroy()
 end)
 
--- Minimize Button
-local minBtn = Instance.new("TextButton")
-minBtn.Name = "MinBtn"
-minBtn.Size = UDim2.new(0, 32, 0, 32)
-minBtn.Position = UDim2.new(1, -80, 0.5, -16)
-minBtn.BackgroundTransparency = 1
-minBtn.BorderSizePixel = 0
-minBtn.Font = Enum.Font.GothamBold
-minBtn.Text = LucideIcons.minus
-minBtn.TextColor3 = CONFIG.COLORS.Gray
-minBtn.TextSize = 20
-minBtn.AutoButtonColor = false
-minBtn.Parent = topBar
-
-minBtn.MouseEnter:Connect(function()
-    TweenService:Create(minBtn, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.White}):Play()
-end)
-
-minBtn.MouseLeave:Connect(function()
-    TweenService:Create(minBtn, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
-end)
-
--- FIXED: Drag Button - Proper click detection, no global click issues
-local function createDragButton()
-    local btn = Instance.new("ImageButton")
-    btn.Name = "DragToggleBtn"
-    btn.Size = UDim2.new(0, 50, 0, 50)
-    
-    if savedButtonPosition then
-        btn.Position = savedButtonPosition
-    else
-        btn.Position = UDim2.new(0, 100, 0, 100)
-    end
-    
-    btn.BackgroundColor3 = CONFIG.COLORS.Accent
-    btn.BackgroundTransparency = 0.2
-    btn.BorderSizePixel = 0
-    btn.Image = "rbxassetid://3926305904"
-    btn.ImageColor3 = CONFIG.COLORS.White
-    btn.ImageTransparency = 0
-    btn.ScaleType = Enum.ScaleType.Fit
-    btn.Active = true
-    btn.Visible = false
-    btn.Parent = screenGui
-    
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(1, 0)
-    btnCorner.Parent = btn
-    
-    local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = CONFIG.COLORS.White
-    btnStroke.Thickness = 2
-    btnStroke.Parent = btn
-    
-    local glow = Instance.new("ImageLabel")
-    glow.Name = "Glow"
-    glow.Size = UDim2.new(1.4, 0, 1.4, 0)
-    glow.Position = UDim2.new(-0.2, 0, -0.2, 0)
-    glow.BackgroundTransparency = 1
-    glow.Image = "rbxassetid://3926305904"
-    glow.ImageColor3 = CONFIG.COLORS.Accent
-    glow.ImageTransparency = 0.8
-    glow.ScaleType = Enum.ScaleType.Fit
-    glow.Parent = btn
-    
-    local glowCorner = Instance.new("UICorner")
-    glowCorner.CornerRadius = UDim.new(1, 0)
-    glowCorner.Parent = glow
-    
-    local icon = Instance.new("TextLabel")
-    icon.Size = UDim2.new(1, 0, 1, 0)
-    icon.BackgroundTransparency = 1
-    icon.Font = Enum.Font.GothamBold
-    icon.Text = LucideIcons.menu
-    icon.TextColor3 = CONFIG.COLORS.White
-    icon.TextSize = 20
-    icon.Parent = btn
-    
-    -- FIXED: Proper drag and click handling
-    local isHolding = false
-    local startHoldPos = nil
-    local startButtonPos = nil
-    local hasMoved = false
-    local inputChangedConnection = nil
-    
-    btn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            isHolding = true
-            hasMoved = false
-            startHoldPos = input.Position
-            startButtonPos = btn.Position
-            dragButtonDragging = true -- Set global flag
-            
-            -- Track movement
-            inputChangedConnection = UserInputService.InputChanged:Connect(function(changedInput)
-                if not isHolding then return end
-                if changedInput.UserInputType == Enum.UserInputType.MouseMovement or changedInput.UserInputType == Enum.UserInputType.Touch then
-                    local distance = (changedInput.Position - startHoldPos).Magnitude
-                    if distance > 5 then
-                        hasMoved = true
-                        local delta = changedInput.Position - startHoldPos
-                        btn.Position = UDim2.new(
-                            startButtonPos.X.Scale,
-                            startButtonPos.X.Offset + delta.X,
-                            startButtonPos.Y.Scale,
-                            startButtonPos.Y.Offset + delta.Y
-                        )
-                    end
-                end
-            end)
-            
-            -- Handle release
-            local releaseConnection
-            releaseConnection = input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    isHolding = false
-                    dragButtonDragging = false -- Clear global flag
-                    
-                    if inputChangedConnection then
-                        inputChangedConnection:Disconnect()
-                        inputChangedConnection = nil
-                    end
-                    releaseConnection:Disconnect()
-                    
-                    if not hasMoved then
-                        -- It was a click, toggle main frame
-                        isMinimized = not isMinimized
-                        if isMinimized then
-                            mainFrame.Visible = false
-                        else
-                            mainFrame.Visible = true
-                            mainFrame.Size = UDim2.new(0, 680, 0, 430)
-                            TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back), {
-                                Size = UDim2.new(0, 700, 0, 450)
-                            }):Play()
-                        end
-                    else
-                        -- Was a drag, save position
-                        savedButtonPosition = btn.Position
-                    end
-                end
-            end)
-        end
-    end)
-    
-    -- Hover effects
-    btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.2), {Size = UDim2.new(0, 55, 0, 55)}):Play()
-        TweenService:Create(glow, TweenInfo.new(0.2), {ImageTransparency = 0.5}):Play()
-    end)
-    
-    btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.2), {Size = UDim2.new(0, 50, 0, 50)}):Play()
-        TweenService:Create(glow, TweenInfo.new(0.2), {ImageTransparency = 0.8}):Play()
-    end)
-    
-    -- Pulse animation
-    spawn(function()
-        while btn and btn.Parent do
-            TweenService:Create(glow, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-                ImageTransparency = 0.6
-            }):Play()
-            task.wait(1)
-            TweenService:Create(glow, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-                ImageTransparency = 0.8
-            }):Play()
-            task.wait(1)
-        end
-    end)
-    
-    return btn
-end
-
-dragButton = createDragButton()
-
--- FIXED: Minimize button only works when not dragging
-minBtn.MouseButton1Click:Connect(function()
-    if isMinimized or dragButtonDragging then return end
-    
-    isMinimized = true
-    mainFrame.Visible = false
-    dragButton.Visible = true
-    
-    if not savedButtonPosition then
-        dragButton.Position = UDim2.new(0, mainFrame.AbsolutePosition.X + 650, 0, mainFrame.AbsolutePosition.Y + 20)
-    end
-    
-    dragButton.Size = UDim2.new(0, 0, 0, 0)
-    TweenService:Create(dragButton, TweenInfo.new(0.4, Enum.EasingStyle.Back), {
-        Size = UDim2.new(0, 50, 0, 50)
-    }):Play()
-end)
-
--- Sidebar (rest of the code remains the same...)
+-- Sidebar
 local sidebar = Instance.new("Frame")
 sidebar.Name = "Sidebar"
-sidebar.Size = UDim2.new(0, 180, 1, -50)
+sidebar.Size = UDim2.new(0, 200, 1, -50)
 sidebar.Position = UDim2.new(0, 0, 0, 50)
 sidebar.BackgroundColor3 = CONFIG.COLORS.Sidebar
 sidebar.BackgroundTransparency = 0.3
@@ -409,337 +261,381 @@ local sidebarCorner = Instance.new("UICorner")
 sidebarCorner.CornerRadius = UDim.new(0, 16)
 sidebarCorner.Parent = sidebar
 
-local leftMask = Instance.new("Frame")
-leftMask.Name = "LeftMask"
-leftMask.Size = UDim2.new(0, 20, 1, 0)
-leftMask.Position = UDim2.new(0, 0, 0, 0)
-leftMask.BackgroundColor3 = CONFIG.COLORS.Sidebar
-leftMask.BackgroundTransparency = 0.3
-leftMask.BorderSizePixel = 0
-leftMask.ZIndex = 2
-leftMask.Parent = sidebar
-
--- User Profile Button
-local profileButton = Instance.new("TextButton")
-profileButton.Name = "ProfileButton"
-profileButton.Size = UDim2.new(1, -20, 0, 80)
-profileButton.Position = UDim2.new(0, 10, 0, 10)
-profileButton.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-profileButton.BackgroundTransparency = 0.5
-profileButton.BorderSizePixel = 0
-profileButton.AutoButtonColor = false
-profileButton.Text = ""
-profileButton.Parent = sidebar
-
-local profileCorner = Instance.new("UICorner")
-profileCorner.CornerRadius = UDim.new(0, 12)
-profileCorner.Parent = profileButton
-
-local avatarImage = Instance.new("ImageLabel")
-avatarImage.Name = "Avatar"
-avatarImage.Size = UDim2.new(0, 50, 0, 50)
-avatarImage.Position = UDim2.new(0, 15, 0.5, -25)
-avatarImage.BackgroundColor3 = CONFIG.COLORS.Accent
-avatarImage.BackgroundTransparency = 0.3
-avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150"
-avatarImage.Parent = profileButton
-
-local avatarCorner = Instance.new("UICorner")
-avatarCorner.CornerRadius = UDim.new(1, 0)
-avatarCorner.Parent = avatarImage
-
-local userLabel = Instance.new("TextLabel")
-userLabel.Size = UDim2.new(1, -85, 0, 25)
-userLabel.Position = UDim2.new(0, 75, 0, 10)
-userLabel.BackgroundTransparency = 1
-userLabel.Font = Enum.Font.GothamBold
-userLabel.Text = player.Name
-userLabel.TextColor3 = CONFIG.COLORS.White
-userLabel.TextSize = 14
-userLabel.TextTruncate = Enum.TextTruncate.AtEnd
-userLabel.TextXAlignment = Enum.TextXAlignment.Left
-userLabel.Parent = profileButton
-
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -85, 0, 20)
-statusLabel.Position = UDim2.new(0, 75, 0, 35)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Font = Enum.Font.GothamBold
-statusLabel.Text = LucideIcons.shield .. " PREMIUM"
-statusLabel.TextColor3 = CONFIG.COLORS.Success
-statusLabel.TextSize = 11
-statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-statusLabel.Parent = profileButton
-
--- Discord Button
-local discordBtn = Instance.new("TextButton")
-discordBtn.Name = "DiscordBtn"
-discordBtn.Size = UDim2.new(1, -85, 0, 22)
-discordBtn.Position = UDim2.new(0, 75, 0, 55)
-discordBtn.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
-discordBtn.BorderSizePixel = 0
-discordBtn.Font = Enum.Font.GothamBold
-discordBtn.Text = LucideIcons.message .. " Discord"
-discordBtn.TextColor3 = CONFIG.COLORS.White
-discordBtn.TextSize = 10
-discordBtn.AutoButtonColor = false
-discordBtn.Parent = profileButton
-
-local discordCorner = Instance.new("UICorner")
-discordCorner.CornerRadius = UDim.new(0, 6)
-discordCorner.Parent = discordBtn
-
-local discordGradient = Instance.new("UIGradient")
-discordGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 115, 255)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(88, 101, 242))
-})
-discordGradient.Rotation = 90
-discordGradient.Parent = discordBtn
-
-discordBtn.MouseEnter:Connect(function()
-    TweenService:Create(discordBtn, TweenInfo.new(0.2), {
-        BackgroundColor3 = Color3.fromRGB(120, 135, 255)
-    }):Play()
-end)
-
-discordBtn.MouseLeave:Connect(function()
-    TweenService:Create(discordBtn, TweenInfo.new(0.2), {
-        BackgroundColor3 = Color3.fromRGB(88, 101, 242)
-    }):Play()
-end)
-
-discordBtn.MouseButton1Click:Connect(function()
-    if setclipboard then
-        setclipboard(CONFIG.DISCORD_LINK)
-        discordBtn.Text = LucideIcons.check .. " Copied!"
-        task.delay(2, function()
-            discordBtn.Text = LucideIcons.message .. " Discord"
-        end)
-    end
-end)
-
-profileButton.MouseEnter:Connect(function()
-    TweenService:Create(profileButton, TweenInfo.new(0.2), {
-        BackgroundColor3 = Color3.fromRGB(55, 55, 65),
-        BackgroundTransparency = 0.3
-    }):Play()
-end)
-
-profileButton.MouseLeave:Connect(function()
-    TweenService:Create(profileButton, TweenInfo.new(0.2), {
-        BackgroundColor3 = Color3.fromRGB(45, 45, 55),
-        BackgroundTransparency = 0.5
-    }):Play()
-end)
-
--- Tab Container
+-- Tab Buttons Container
 local tabContainer = Instance.new("Frame")
 tabContainer.Name = "TabContainer"
-tabContainer.Size = UDim2.new(1, -20, 1, -110)
-tabContainer.Position = UDim2.new(0, 10, 0, 100)
+tabContainer.Size = UDim2.new(1, -20, 1, -20)
+tabContainer.Position = UDim2.new(0, 10, 0, 10)
 tabContainer.BackgroundTransparency = 1
 tabContainer.Parent = sidebar
 
 local tabList = Instance.new("UIListLayout")
 tabList.FillDirection = Enum.FillDirection.Vertical
 tabList.SortOrder = Enum.SortOrder.LayoutOrder
-tabList.Padding = UDim.new(0, 6)
+tabList.Padding = UDim.new(0, 8)
 tabList.Parent = tabContainer
 
--- Tab Management
-local currentTab = nil
-local tabs = {}
-local contentFrames = {}
+-- Content Frames Container
+local contentContainer = Instance.new("Frame")
+contentContainer.Name = "ContentContainer"
+contentContainer.Size = UDim2.new(1, -220, 1, -70)
+contentContainer.Position = UDim2.new(0, 210, 0, 60)
+contentContainer.BackgroundTransparency = 1
+contentContainer.Parent = mainFrame
 
-local function createTab(name, iconKey, layoutOrder)
-    local tabButton = Instance.new("TextButton")
-    tabButton.Name = name .. "Tab"
-    tabButton.Size = UDim2.new(1, 0, 0, 40)
-    tabButton.BackgroundColor3 = CONFIG.COLORS.Background
-    tabButton.BackgroundTransparency = 0.5
-    tabButton.BorderSizePixel = 0
-    tabButton.LayoutOrder = layoutOrder
-    tabButton.AutoButtonColor = false
-    tabButton.Parent = tabContainer
+-- Current Tab Tracker
+local currentTab = nil
+
+-- Create Tab Function
+local function createTab(name, icon)
+    local tabBtn = Instance.new("TextButton")
+    tabBtn.Name = name .. "Tab"
+    tabBtn.Size = UDim2.new(1, 0, 0, 45)
+    tabBtn.BackgroundColor3 = CONFIG.COLORS.Background
+    tabBtn.BackgroundTransparency = 0.5
+    tabBtn.BorderSizePixel = 0
+    tabBtn.AutoButtonColor = false
+    tabBtn.Font = Enum.Font.GothamBold
+    tabBtn.Text = "   " .. icon .. "  " .. name
+    tabBtn.TextColor3 = CONFIG.COLORS.Gray
+    tabBtn.TextSize = 14
+    tabBtn.TextXAlignment = Enum.TextXAlignment.Left
+    tabBtn.Parent = tabContainer
     
     local tabCorner = Instance.new("UICorner")
     tabCorner.CornerRadius = UDim.new(0, 10)
-    tabCorner.Parent = tabButton
+    tabCorner.Parent = tabBtn
     
-    local iconLabel = Instance.new("TextLabel")
-    iconLabel.Size = UDim2.new(0, 30, 1, 0)
-    iconLabel.Position = UDim2.new(0, 12, 0, 0)
-    iconLabel.BackgroundTransparency = 1
-    iconLabel.Font = Enum.Font.GothamBold
-    iconLabel.Text = LucideIcons[iconKey] or "•"
-    iconLabel.TextColor3 = CONFIG.COLORS.Gray
-    iconLabel.TextSize = 18
-    iconLabel.Parent = tabButton
-    
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, -52, 1, 0)
-    textLabel.Position = UDim2.new(0, 45, 0, 0)
-    textLabel.BackgroundTransparency = 1
-    textLabel.Font = Enum.Font.GothamBold
-    textLabel.Text = name
-    textLabel.TextColor3 = CONFIG.COLORS.Gray
-    textLabel.TextSize = 14
-    textLabel.TextXAlignment = Enum.TextXAlignment.Left
-    textLabel.Parent = tabButton
-    
-    local chevron = Instance.new("TextLabel")
-    chevron.Size = UDim2.new(0, 20, 1, 0)
-    chevron.Position = UDim2.new(1, -25, 0, 0)
-    chevron.BackgroundTransparency = 1
-    chevron.Font = Enum.Font.GothamBold
-    chevron.Text = LucideIcons.chevronRight
-    chevron.TextColor3 = CONFIG.COLORS.DarkGray
-    chevron.TextSize = 12
-    chevron.Parent = tabButton
-    
+    -- Content Frame
     local contentFrame = Instance.new("ScrollingFrame")
     contentFrame.Name = name .. "Content"
-    contentFrame.Size = UDim2.new(1, -200, 1, -70)
-    contentFrame.Position = UDim2.new(0, 190, 0, 60)
+    contentFrame.Size = UDim2.new(1, 0, 1, 0)
     contentFrame.BackgroundTransparency = 1
     contentFrame.BorderSizePixel = 0
     contentFrame.ScrollBarThickness = 4
     contentFrame.ScrollBarImageColor3 = CONFIG.COLORS.Accent
     contentFrame.Visible = false
-    contentFrame.Parent = mainFrame
+    contentFrame.Parent = contentContainer
     
-    tabButton.MouseEnter:Connect(function()
-        if currentTab ~= tabButton then
-            TweenService:Create(tabButton, TweenInfo.new(0.2), {
-                BackgroundColor3 = CONFIG.COLORS.Hover,
-                BackgroundTransparency = 0.3
-            }):Play()
-            TweenService:Create(iconLabel, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.White}):Play()
-            TweenService:Create(textLabel, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.White}):Play()
-        end
-    end)
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0, 10)
+    listLayout.Parent = contentFrame
     
-    tabButton.MouseLeave:Connect(function()
-        if currentTab ~= tabButton then
-            TweenService:Create(tabButton, TweenInfo.new(0.2), {
-                BackgroundColor3 = CONFIG.COLORS.Background,
-                BackgroundTransparency = 0.5
-            }):Play()
-            TweenService:Create(iconLabel, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
-            TweenService:Create(textLabel, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
-        end
-    end)
-    
-    tabButton.MouseButton1Click:Connect(function()
-        if currentTab == tabButton then return end
+    -- Tab Switch Logic
+    tabBtn.MouseButton1Click:Connect(function()
+        if currentTab == contentFrame then return end
         
-        for _, frame in pairs(contentFrames) do
-            frame.Visible = false
-        end
-        
+        -- Hide current
         if currentTab then
-            local prevData = tabs[currentTab]
-            TweenService:Create(currentTab, TweenInfo.new(0.2), {
-                BackgroundColor3 = CONFIG.COLORS.Background,
-                BackgroundTransparency = 0.5
-            }):Play()
-            TweenService:Create(prevData.icon, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
-            TweenService:Create(prevData.text, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
-            TweenService:Create(prevData.chevron, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
+            currentTab.Visible = false
         end
         
-        currentTab = tabButton
-        TweenService:Create(tabButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = CONFIG.COLORS.Accent,
-            BackgroundTransparency = 0.2
-        }):Play()
-        TweenService:Create(iconLabel, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.White}):Play()
-        TweenService:Create(textLabel, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.White}):Play()
-        TweenService:Create(chevron, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
+        -- Reset all tab colors
+        for _, child in ipairs(tabContainer:GetChildren()) do
+            if child:IsA("TextButton") then
+                TweenService:Create(child, TweenInfo.new(0.2), {
+                    BackgroundColor3 = CONFIG.COLORS.Background,
+                    TextColor3 = CONFIG.COLORS.Gray
+                }):Play()
+            end
+        end
         
+        -- Show new tab
+        currentTab = contentFrame
         contentFrame.Visible = true
-        contentFrame.CanvasPosition = Vector2.new(0, 0)
+        TweenService:Create(tabBtn, TweenInfo.new(0.2), {
+            BackgroundColor3 = CONFIG.COLORS.Accent,
+            TextColor3 = CONFIG.COLORS.White
+        }):Play()
     end)
     
-    tabs[tabButton] = {
-        icon = iconLabel,
-        text = textLabel,
-        chevron = chevron,
-        content = contentFrame
-    }
-    contentFrames[name] = contentFrame
+    tabBtn.MouseEnter:Connect(function()
+        if currentTab ~= contentFrame then
+            TweenService:Create(tabBtn, TweenInfo.new(0.2), {
+                BackgroundColor3 = CONFIG.COLORS.Hover
+            }):Play()
+        end
+    end)
+    
+    tabBtn.MouseLeave:Connect(function()
+        if currentTab ~= contentFrame then
+            TweenService:Create(tabBtn, TweenInfo.new(0.2), {
+                BackgroundColor3 = CONFIG.COLORS.Background
+            }):Play()
+        end
+    end)
     
     return contentFrame
 end
 
-local featuresTab = createTab("Features", "zap", 1)
-local gameTab = createTab("Game", "gamepad", 2)
-local scriptsTab = createTab("Scripts", "code", 3)
-local settingsTab = createTab("Settings", "settings", 4)
+-- Create Tabs
+local automationTab = createTab("Automation", "⚡")
+local sellTab = createTab("Sell", "💰")
 
--- Server Frame
-local serverFrame = Instance.new("ScrollingFrame")
-serverFrame.Name = "ServerContent"
-serverFrame.Size = UDim2.new(1, -200, 1, -70)
-serverFrame.Position = UDim2.new(0, 190, 0, 60)
-serverFrame.BackgroundTransparency = 1
-serverFrame.BorderSizePixel = 0
-serverFrame.ScrollBarThickness = 4
-serverFrame.ScrollBarImageColor3 = CONFIG.COLORS.Accent
-serverFrame.Visible = false
-serverFrame.Parent = mainFrame
-
-contentFrames["Server"] = serverFrame
-
--- Server UI (simplified for brevity)
-local serverTitle = Instance.new("TextLabel")
-serverTitle.Size = UDim2.new(1, -20, 0, 30)
-serverTitle.Position = UDim2.new(0, 10, 0, 10)
-serverTitle.BackgroundTransparency = 1
-serverTitle.Font = Enum.Font.GothamBold
-serverTitle.Text = LucideIcons.users .. " Server Management"
-serverTitle.TextColor3 = CONFIG.COLORS.White
-serverTitle.TextSize = 20
-serverTitle.Parent = serverFrame
-
--- Profile Button opens Server tab
-profileButton.MouseButton1Click:Connect(function()
-    for _, frame in pairs(contentFrames) do
-        frame.Visible = false
-    end
+-- Helper: Create Toggle Button
+local function createToggle(parent, name, description, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -20, 0, 70)
+    frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
+    frame.BackgroundTransparency = 0.3
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
     
-    for btn, data in pairs(tabs) do
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -100, 0, 25)
+    title.Position = UDim2.new(0, 15, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = name
+    title.TextColor3 = CONFIG.COLORS.White
+    title.TextSize = 14
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+    
+    local desc = Instance.new("TextLabel")
+    desc.Size = UDim2.new(1, -100, 0, 20)
+    desc.Position = UDim2.new(0, 15, 0, 35)
+    desc.BackgroundTransparency = 1
+    desc.Font = Enum.Font.Gotham
+    desc.Text = description
+    desc.TextColor3 = CONFIG.COLORS.Gray
+    desc.TextSize = 11
+    desc.TextXAlignment = Enum.TextXAlignment.Left
+    desc.Parent = frame
+    
+    -- Toggle Switch
+    local toggle = Instance.new("Frame")
+    toggle.Size = UDim2.new(0, 50, 0, 26)
+    toggle.Position = UDim2.new(1, -65, 0.5, -13)
+    toggle.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+    toggle.BorderSizePixel = 0
+    toggle.Parent = frame
+    
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.CornerRadius = UDim.new(1, 0)
+    toggleCorner.Parent = toggle
+    
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 22, 0, 22)
+    knob.Position = UDim2.new(0, 2, 0.5, -11)
+    knob.BackgroundColor3 = CONFIG.COLORS.White
+    knob.BorderSizePixel = 0
+    knob.Parent = toggle
+    
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = knob
+    
+    local enabled = false
+    
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            enabled = not enabled
+            callback(enabled)
+            
+            if enabled then
+                TweenService:Create(toggle, TweenInfo.new(0.2), {
+                    BackgroundColor3 = CONFIG.COLORS.Success
+                }):Play()
+                TweenService:Create(knob, TweenInfo.new(0.2), {
+                    Position = UDim2.new(0, 26, 0.5, -11)
+                }):Play()
+            else
+                TweenService:Create(toggle, TweenInfo.new(0.2), {
+                    BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+                }):Play()
+                TweenService:Create(knob, TweenInfo.new(0.2), {
+                    Position = UDim2.new(0, 2, 0.5, -11)
+                }):Play()
+            end
+        end
+    end)
+    
+    return frame
+end
+
+-- Helper: Create Dropdown
+local function createDropdown(parent, name, options, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -20, 0, 80)
+    frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
+    frame.BackgroundTransparency = 0.3
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -30, 0, 25)
+    title.Position = UDim2.new(0, 15, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = name
+    title.TextColor3 = CONFIG.COLORS.White
+    title.TextSize = 14
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+    
+    -- Dropdown Button
+    local dropdownBtn = Instance.new("TextButton")
+    dropdownBtn.Size = UDim2.new(1, -30, 0, 30)
+    dropdownBtn.Position = UDim2.new(0, 15, 0, 40)
+    dropdownBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    dropdownBtn.BorderSizePixel = 0
+    dropdownBtn.Font = Enum.Font.Gotham
+    dropdownBtn.Text = "Select..."
+    dropdownBtn.TextColor3 = CONFIG.COLORS.Gray
+    dropdownBtn.TextSize = 12
+    dropdownBtn.Parent = frame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 8)
+    btnCorner.Parent = dropdownBtn
+    
+    local selected = nil
+    
+    dropdownBtn.MouseButton1Click:Connect(function()
+        -- Simple dropdown - cycle through options
+        if not selected then
+            selected = 1
+        else
+            selected = selected % #options + 1
+        end
+        dropdownBtn.Text = options[selected]
+        callback(options[selected])
+    end)
+    
+    return frame
+end
+
+-- Helper: Create Normal Button
+local function createButton(parent, name, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -20, 0, 45)
+    btn.BackgroundColor3 = CONFIG.COLORS.Accent
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.GothamBold
+    btn.Text = name
+    btn.TextColor3 = CONFIG.COLORS.White
+    btn.TextSize = 14
+    btn.Parent = parent
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 10)
+    btnCorner.Parent = btn
+    
+    btn.MouseEnter:Connect(function()
         TweenService:Create(btn, TweenInfo.new(0.2), {
-            BackgroundColor3 = CONFIG.COLORS.Background,
-            BackgroundTransparency = 0.5
+            BackgroundColor3 = Color3.fromRGB(110, 123, 255)
         }):Play()
-        TweenService:Create(data.icon, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
-        TweenService:Create(data.text, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
-        TweenService:Create(data.chevron, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
-    end
+    end)
     
-    currentTab = nil
-    serverFrame.Visible = true
-end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            BackgroundColor3 = CONFIG.COLORS.Accent
+        }):Play()
+    end)
+    
+    btn.MouseButton1Click:Connect(callback)
+    
+    return btn
+end
 
--- Select Features tab by default
-task.delay(0.3, function()
-    local featuresTabBtn = sidebar:FindFirstChild("FeaturesTab")
-    if featuresTabBtn then
-        featuresTabBtn.MouseButton1Click:Fire()
+-- ==================== AUTOMATION TAB ====================
+
+-- Auto Collect Cash Toggle
+createToggle(automationTab, "Auto Collect Cash", "Auto collects cash for you", function(enabled)
+    autoCollectCash = enabled
+    if enabled then
+        task.spawn(autoCollectCashLoop)
     end
 end)
 
--- Entrance Animation
-mainFrame.Size = UDim2.new(0, 0, 0, 0)
-mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-mainFrame.Rotation = -5
+-- Speed Upgrade Dropdown
+createDropdown(automationTab, "Auto Upgrade Speed", {"+1 Speed", "+5 Speed", "+10 Speed"}, function(selection)
+    if selection == "+1 Speed" then selectedSpeedAmount = 1
+    elseif selection == "+5 Speed" then selectedSpeedAmount = 5
+    elseif selection == "+10 Speed" then selectedSpeedAmount = 10 end
+end)
 
-TweenService:Create(mainFrame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-    Size = UDim2.new(0, 700, 0, 450),
-    Position = UDim2.new(0.5, -350, 0.5, -225),
-    Rotation = 0
-}):Play()
+-- Auto Upgrade Speed Toggle
+createToggle(automationTab, "Auto Upgrade Speed", "Automatically upgrades speed", function(enabled)
+    autoUpgradeSpeed = enabled
+    if enabled then
+        task.spawn(autoUpgradeSpeedLoop)
+    end
+end)
 
-print("Nexus Main Hub Loaded Successfully! Welcome " .. player.Name)
+-- Auto Upgrade Carry Toggle
+createToggle(automationTab, "Auto Upgrade Carry", "Automatically upgrades carry capacity", function(enabled)
+    autoUpgradeCarry = enabled
+    if enabled then
+        task.spawn(autoUpgradeCarryLoop)
+    end
+end)
+
+-- Brainrot Dropdown (Dynamic)
+local brainrotOptions = {}
+local brainrotData = getBrainrotNames()
+for _, data in ipairs(brainrotData) do
+    table.insert(brainrotOptions, data.name .. " (Slot " .. data.slot .. ")")
+end
+
+if #brainrotOptions == 0 then
+    brainrotOptions = {"No brainrots found"}
+end
+
+createDropdown(automationTab, "Select Brainrot to Upgrade", brainrotOptions, function(selection)
+    -- Parse slot number from selection
+    local slot = string.match(selection, "Slot (%d+)")
+    if slot then
+        selectedBrainrotSlot = tonumber(slot)
+    end
+end)
+
+-- Auto Upgrade Brainrot Toggle
+createToggle(automationTab, "Auto Upgrade Brainrot", "Automatically upgrades selected brainrot", function(enabled)
+    autoUpgradeBrainrot = enabled
+    if enabled then
+        task.spawn(autoUpgradeBrainrotLoop)
+    end
+end)
+
+-- ==================== SELL TAB ====================
+
+-- Auto Sell Inventory Toggle
+createToggle(sellTab, "Auto Sell Inventory", "Sells all your brainrots automatically", function(enabled)
+    autoSellInventory = enabled
+    if enabled then
+        task.spawn(autoSellInventoryLoop)
+    end
+end)
+
+-- Sell Holding Brainrots Button
+createButton(sellTab, "Sell Holding Brainrots", function()
+    local success, result = pcall(function()
+        return SellToolFunction:InvokeServer()
+    end)
+    if success then
+        print("Sold holding brainrots!")
+    end
+end)
+
+-- Select Automation tab by default
+task.delay(0.1, function()
+    automationTab.Parent:FindFirstChild("AutomationTab"):MouseButton1Click:Fire()
+end)
+
+-- Character respawn handler
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+end)
+
+print("Nexus|Escape Tsunami for Brainrots Loaded!")
