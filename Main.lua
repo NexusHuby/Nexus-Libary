@@ -89,7 +89,9 @@ local selectedBrainrotSlot = nil
 -- NEW: Combat Tab Variables
 local hitboxExtenderEnabled = false
 local autoHitEnabled = false
+local hitboxVisualEnabled = false
 local hitboxRange = 10 -- Default range, will be controlled by slider
+local hitboxVisualPart = nil -- Store the visual part
 
 -- NEW: Event Tab Variables
 local autoCollectGoldBars = false
@@ -229,12 +231,47 @@ local function simulateClick()
     end)
 end
 
--- NEW: Hitbox Extender Loop - Uses hitboxRange variable
+-- NEW: Create/Update Hitbox Visual
+local function updateHitboxVisual()
+    if not hitboxVisualEnabled then
+        -- Remove visual if disabled
+        if hitboxVisualPart then
+            hitboxVisualPart:Destroy()
+            hitboxVisualPart = nil
+        end
+        return
+    end
+    
+    -- Create visual part if doesn't exist
+    if not hitboxVisualPart then
+        hitboxVisualPart = Instance.new("Part")
+        hitboxVisualPart.Name = "HitboxVisual"
+        hitboxVisualPart.Shape = Enum.PartType.Ball
+        hitboxVisualPart.Material = Enum.Material.ForceField
+        hitboxVisualPart.Color = Color3.fromRGB(88, 101, 242)
+        hitboxVisualPart.Transparency = 0.7
+        hitboxVisualPart.CanCollide = false
+        hitboxVisualPart.Anchored = true
+        hitboxVisualPart.Parent = Workspace
+    end
+    
+    -- Update size and position
+    hitboxVisualPart.Size = Vector3.new(hitboxRange * 2, hitboxRange * 2, hitboxRange * 2)
+    if humanoidRootPart then
+        hitboxVisualPart.CFrame = humanoidRootPart.CFrame
+    end
+end
+
+-- NEW: Hitbox Extender Loop - Uses hitboxRange variable and updates visual
 local function hitboxExtenderLoop()
     while hitboxExtenderEnabled do
         local success, err = pcall(function()
+            -- Update visual if enabled
+            if hitboxVisualEnabled then
+                updateHitboxVisual()
+            end
+            
             -- Extend hitbox by modifying tool properties or using magnitude checks
-            -- This is visual representation - actual implementation depends on game
             if character then
                 local tool = character:FindFirstChildWhichIsA("Tool")
                 if tool and tool:FindFirstChild("Handle") then
@@ -250,6 +287,12 @@ local function hitboxExtenderLoop()
         end
         
         task.wait(0.1)
+    end
+    
+    -- Clean up visual when disabled
+    if hitboxVisualPart then
+        hitboxVisualPart:Destroy()
+        hitboxVisualPart = nil
     end
 end
 
@@ -514,7 +557,7 @@ local function autoCompleteObbyLoop()
     end
 end
 
--- IMPROVED: Auto Gap Loop with better wave detection
+-- IMPROVED: Auto Gap Loop with CORRECT gaps path
 local function autoGapLoop()
     -- Debug info
     print("Auto Gap started. Looking for waves in:", gapDetectionRange, "studs")
@@ -522,7 +565,14 @@ local function autoGapLoop()
     while autoGapEnabled do
         local success, err = pcall(function()
             local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
-            local gapsFolder = Workspace:FindFirstChild("Gaps")
+            
+            -- FIXED: Correct path to gaps
+            local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstance")
+            local gapsFolder = nil
+            
+            if defaultMap then
+                gapsFolder = defaultMap:FindFirstChild("Gaps")
+            end
             
             if not activeTsunamis then
                 warn("ActiveTsunamis folder not found in Workspace")
@@ -530,7 +580,7 @@ local function autoGapLoop()
             end
             
             if not gapsFolder then
-                warn("Gaps folder not found in Workspace")
+                warn("Gaps folder not found in Workspace.DefaultMap_SharedInstance")
                 return
             end
             
@@ -568,20 +618,14 @@ local function autoGapLoop()
                     local distance = (humanoidRootPart.Position - wavePart.Position).Magnitude
                     print("Wave/Part:", wave.Name, "Distance:", math.floor(distance), "studs")
                     
-                    -- Check if within detection range (50-100 studs as requested)
-                    if distance <= gapDetectionRange and distance >= 50 then
+                    -- Check if within detection range
+                    if distance <= gapDetectionRange then
                         waveNearby = true
                         if distance < closestWaveDistance then
                             closestWaveDistance = distance
                             closestWave = wavePart
                         end
                         print("WAVE DETECTED IN RANGE!")
-                    elseif distance <= gapDetectionRange then
-                        -- Wave is close but maybe too close (less than 50)
-                        waveNearby = true
-                        closestWaveDistance = distance
-                        closestWave = wavePart
-                        print("Wave very close:", math.floor(distance), "studs")
                     end
                 end
             end
@@ -591,31 +635,36 @@ local function autoGapLoop()
                 isTweeningToGap = true
                 print("Wave detected! Finding nearest gap...")
                 
-                -- Find nearest gap
+                -- Find nearest gap - FIXED: Looking for Gap1, Gap2, etc. (no spaces)
                 local nearestGap = nil
                 local nearestGapDistance = math.huge
                 local targetMud = nil
                 
-                -- Look through all children in Gaps folder
-                for _, gap in ipairs(gapsFolder:GetChildren()) do
-                    -- Check if it's a Gap model (Gap 1, Gap 2, etc.)
-                    if gap:IsA("Model") or gap:IsA("Folder") or gap:IsA("BasePart") then
+                -- Look through Gap1 to Gap9
+                for gapNum = 1, 9 do
+                    local gapName = "Gap" .. gapNum -- Gap1, Gap2, etc.
+                    local gap = gapsFolder:FindFirstChild(gapName)
+                    
+                    if gap then
                         local mud = nil
                         
-                        if gap:IsA("BasePart") and gap.Name == "Mud" then
-                            mud = gap
-                        else
+                        -- Look for Mud part inside the gap
+                        if gap:IsA("Model") or gap:IsA("Folder") then
                             mud = gap:FindFirstChild("Mud")
+                        elseif gap:IsA("BasePart") and gap.Name == "Mud" then
+                            mud = gap
                         end
                         
                         if mud and mud:IsA("BasePart") then
                             local distance = (humanoidRootPart.Position - mud.Position).Magnitude
-                            print("Gap:", gap.Name, "Distance:", math.floor(distance))
+                            print("Gap:", gapName, "Distance:", math.floor(distance))
                             if distance < nearestGapDistance then
                                 nearestGapDistance = distance
                                 nearestGap = gap
                                 targetMud = mud
                             end
+                        else
+                            warn("Gap", gapName, "found but no Mud part inside")
                         end
                     end
                 end
@@ -631,7 +680,7 @@ local function autoGapLoop()
                     -- Stay in gap for a bit
                     task.wait(3)
                 else
-                    warn("No Mud part found in any gap!")
+                    warn("No valid gap with Mud part found!")
                 end
                 
                 isTweeningToGap = false
@@ -710,6 +759,11 @@ closeBtn.TextSize = 18
 closeBtn.Parent = titleBar
 
 closeBtn.MouseButton1Click:Connect(function()
+    -- Clean up hitbox visual on close
+    if hitboxVisualPart then
+        hitboxVisualPart:Destroy()
+        hitboxVisualPart = nil
+    end
     screenGui:Destroy()
 end)
 
@@ -1241,6 +1295,30 @@ createSlider(combatTab, "Hitbox Range", "Adjust attack range distance", 1, 50, 1
     print("Hitbox range set to:", value)
 end)
 
+-- NEW: Hitbox Visual Toggle
+createToggle(combatTab, "Show Hitbox Visual", "Shows a sphere visualizing attack range", function(enabled)
+    hitboxVisualEnabled = enabled
+    if enabled then
+        -- Create visual immediately
+        updateHitboxVisual()
+        -- Start update loop if not already running
+        if not hitboxExtenderEnabled then
+            task.spawn(function()
+                while hitboxVisualEnabled do
+                    updateHitboxVisual()
+                    task.wait(0.1)
+                end
+            end)
+        end
+    else
+        -- Remove visual
+        if hitboxVisualPart then
+            hitboxVisualPart:Destroy()
+            hitboxVisualPart = nil
+        end
+    end
+end)
+
 -- Auto Hit Toggle
 createToggle(combatTab, "Auto Hit", "Auto equips tool and attacks nearby enemies", function(enabled)
     autoHitEnabled = enabled
@@ -1316,6 +1394,13 @@ player.CharacterAdded:Connect(function(newChar)
     character = newChar
     humanoidRootPart = character:WaitForChild("HumanoidRootPart")
     humanoid = character:WaitForChild("Humanoid")
+    
+    -- Recreate hitbox visual if it was enabled
+    if hitboxVisualEnabled then
+        task.delay(1, function()
+            updateHitboxVisual()
+        end)
+    end
 end)
 
 print("Nexus|Escape Tsunami for Brainrots Loaded!")
