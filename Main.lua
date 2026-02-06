@@ -466,28 +466,35 @@ local function autoUpgradeBrainrotLoop()
     end
 end
 
--- NEW: Auto Collect Gold Bars Loop
+-- FIXED: Auto Collect Gold Bars Loop - Corrected path
 local function autoCollectGoldBarsLoop()
     while autoCollectGoldBars do
         local success, err = pcall(function()
-            local moneyEventsParts = Workspace:FindFirstChild("MoneyEventsParts")
-            if moneyEventsParts then
-                -- Find all Goldbar models
-                for _, child in ipairs(moneyEventsParts:GetChildren()) do
-                    if not autoCollectGoldBars then break end
-                    
-                    if child:IsA("Model") and child.Name == "Goldbar" then
-                        -- Find the main part to tween to
-                        local targetPart = child:FindFirstChildWhichIsA("BasePart")
-                        if targetPart then
-                            -- Tween to gold bar
-                            local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = targetPart.CFrame})
-                            tween:Play()
-                            tween.Completed:Wait()
-                            
-                            -- Wait a moment to collect
-                            task.wait(0.5)
-                        end
+            -- FIXED: Correct path is MoneyEventParts (not MoneyEventsParts)
+            local moneyEventParts = Workspace:FindFirstChild("MoneyEventParts")
+            if not moneyEventParts then
+                warn("MoneyEventParts folder not found!")
+                return
+            end
+            
+            -- Find all GoldBar models
+            for _, child in ipairs(moneyEventParts:GetChildren()) do
+                if not autoCollectGoldBars then break end
+                
+                if child:IsA("Model") and child.Name == "GoldBar" then
+                    -- FIXED: Path is GoldBar.Main
+                    local mainPart = child:FindFirstChild("Main")
+                    if mainPart and mainPart:IsA("BasePart") then
+                        print("Found GoldBar, tweening to:", mainPart.Position)
+                        -- Tween to gold bar
+                        local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = mainPart.CFrame})
+                        tween:Play()
+                        tween.Completed:Wait()
+                        
+                        -- Wait a moment to collect
+                        task.wait(0.5)
+                    else
+                        warn("GoldBar found but no Main part inside")
                     end
                 end
             end
@@ -501,12 +508,16 @@ local function autoCollectGoldBarsLoop()
     end
 end
 
--- NEW: Auto Complete Obby Loop
+-- FIXED: Auto Complete Obby Loop - Corrected paths (SharedInstances plural)
 local function autoCompleteObbyLoop()
     while autoCompleteObby do
         local success, err = pcall(function()
-            local moneyMap = Workspace:FindFirstChild("MoneyMap_SharedInstance")
-            if not moneyMap then return end
+            -- FIXED: Correct path is MoneyMap_SharedInstances (plural)
+            local moneyMap = Workspace:FindFirstChild("MoneyMap_SharedInstances")
+            if not moneyMap then 
+                warn("MoneyMap_SharedInstances not found!")
+                return 
+            end
             
             -- Cycle through obby variants 1-3
             for obbyNum = 1, 3 do
@@ -521,6 +532,8 @@ local function autoCompleteObbyLoop()
                 local safetyPart = moneyMap:FindFirstChild(safetyPartName)
                 
                 if startPart and endPart then
+                    print("Starting obby", obbyNum)
+                    
                     -- Tween to start
                     if startPart:IsA("BasePart") then
                         local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = startPart.CFrame})
@@ -544,7 +557,10 @@ local function autoCompleteObbyLoop()
                         firetouchinterest(humanoidRootPart, safetyPart, 1)
                     end
                     
+                    print("Completed obby", obbyNum)
                     task.wait(1) -- Wait between obbies
+                else
+                    warn("Obby", obbyNum, "parts not found")
                 end
             end
         end)
@@ -557,7 +573,7 @@ local function autoCompleteObbyLoop()
     end
 end
 
--- IMPROVED: Auto Gap Loop with CORRECT gaps path
+-- FIXED: Auto Gap Loop with CORRECT gaps path (SharedInstances plural)
 local function autoGapLoop()
     -- Debug info
     print("Auto Gap started. Looking for waves in:", gapDetectionRange, "studs")
@@ -566,8 +582,8 @@ local function autoGapLoop()
         local success, err = pcall(function()
             local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
             
-            -- FIXED: Correct path to gaps
-            local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstance")
+            -- FIXED: Correct path is DefaultMap_SharedInstances (plural)
+            local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
             local gapsFolder = nil
             
             if defaultMap then
@@ -580,7 +596,7 @@ local function autoGapLoop()
             end
             
             if not gapsFolder then
-                warn("Gaps folder not found in Workspace.DefaultMap_SharedInstance")
+                warn("Gaps folder not found in Workspace.DefaultMap_SharedInstances")
                 return
             end
             
@@ -635,7 +651,7 @@ local function autoGapLoop()
                 isTweeningToGap = true
                 print("Wave detected! Finding nearest gap...")
                 
-                -- Find nearest gap - FIXED: Looking for Gap1, Gap2, etc. (no spaces)
+                -- Find nearest gap - Looking for Gap1, Gap2, etc. (no spaces)
                 local nearestGap = nil
                 local nearestGapDistance = math.huge
                 local targetMud = nil
@@ -872,6 +888,8 @@ local combatTab = createTab("Combat", "⚔️")
 local eventTab = createTab("Event", "🎉")
 local sellTab = createTab("Sell", "💰")
 local settingsTab = createTab("Settings", "⚙️")
+
+print("Tabs created:", automationTab and "Automation", combatTab and "Combat", eventTab and "Event", sellTab and "Sell", settingsTab and "Settings")
 
 -- Helper: Create Toggle
 local function createToggle(parent, name, description, callback)
@@ -1281,6 +1299,8 @@ end)
 
 -- ==================== COMBAT TAB ====================
 
+print("Creating Combat tab elements...")
+
 -- Hitbox Extender Toggle
 createToggle(combatTab, "Hitbox Extender", "Extends attack range to hit enemies", function(enabled)
     hitboxExtenderEnabled = enabled
@@ -1327,10 +1347,14 @@ createToggle(combatTab, "Auto Hit", "Auto equips tool and attacks nearby enemies
     end
 end)
 
+print("Combat tab elements created")
+
 -- ==================== EVENT TAB ====================
 
+print("Creating Event tab elements...")
+
 -- Auto Collect Gold Bars Toggle
-createToggle(eventTab, "Auto Collect Gold Bars", "Auto collects gold bars from MoneyEventsParts", function(enabled)
+createToggle(eventTab, "Auto Collect Gold Bars", "Auto collects gold bars from MoneyEventParts", function(enabled)
     autoCollectGoldBars = enabled
     if enabled then
         task.spawn(autoCollectGoldBarsLoop)
@@ -1344,6 +1368,8 @@ createToggle(eventTab, "Auto Complete Obby", "Auto completes MoneyMap obbies 1-3
         task.spawn(autoCompleteObbyLoop)
     end
 end)
+
+print("Event tab elements created")
 
 -- ==================== SELL TAB ====================
 
