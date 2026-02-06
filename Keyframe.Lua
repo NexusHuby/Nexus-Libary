@@ -1,11 +1,12 @@
 --[[
-    Premium Key System UI - Animated Gradient Background + Close Button
-    Created by: Assistant
-    Features: Smooth gradient transitions, rotating gradients, close button
+    Premium Key System UI - Two Repo System with Persistence
+    Repo 1: Key System (This script)
+    Repo 2: Main Script (Loaded after key verification)
 ]]
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
@@ -13,6 +14,9 @@ local playerGui = player:WaitForChild("PlayerGui")
 local CONFIG = {
     KEY_LINK = "https://discord.gg/yourlink",
     VALID_KEYS = {"FREEKEY2024", "DISCORD123", "SPECIALACCESS"},
+    -- REPLACE WITH YOUR RAW GITHUB URL FOR MAIN SCRIPT
+    MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/YOURUSERNAME/YOURREPO/main/MainScript.lua",
+    
     COLORS = {
         Background = Color3.fromRGB(30, 30, 35),
         InputBg = Color3.fromRGB(45, 45, 55),
@@ -28,19 +32,107 @@ local CONFIG = {
         CloseButton = Color3.fromRGB(200, 200, 200),
         CloseButtonHover = Color3.fromRGB(255, 100, 100)
     },
-    -- Gradient presets for background animation [Color1, Color2, Rotation]
     GRADIENT_PRESETS = {
-        {Color3.fromRGB(40, 40, 50), Color3.fromRGB(25, 25, 30), 45},      -- Cool dark
-        {Color3.fromRGB(35, 35, 45), Color3.fromRGB(45, 40, 55), 90},      -- Purple tint
-        {Color3.fromRGB(30, 35, 45), Color3.fromRGB(40, 35, 50), 135},     -- Blue tint
-        {Color3.fromRGB(45, 40, 45), Color3.fromRGB(30, 30, 35), 180},     -- Warm dark
-        {Color3.fromRGB(35, 40, 45), Color3.fromRGB(45, 45, 55), 225},     -- Cyan tint
-        {Color3.fromRGB(40, 35, 45), Color3.fromRGB(50, 45, 55), 270},     -- Pink tint
-        {Color3.fromRGB(30, 40, 40), Color3.fromRGB(40, 45, 50), 315},     -- Green tint
-        {Color3.fromRGB(45, 45, 50), Color3.fromRGB(30, 30, 35), 360}      -- Back to neutral
+        {Color3.fromRGB(40, 40, 50), Color3.fromRGB(25, 25, 30), 45},
+        {Color3.fromRGB(35, 35, 45), Color3.fromRGB(45, 40, 55), 90},
+        {Color3.fromRGB(30, 35, 45), Color3.fromRGB(40, 35, 50), 135},
+        {Color3.fromRGB(45, 40, 45), Color3.fromRGB(30, 30, 35), 180},
+        {Color3.fromRGB(35, 40, 45), Color3.fromRGB(45, 45, 55), 225},
+        {Color3.fromRGB(40, 35, 45), Color3.fromRGB(50, 45, 55), 270},
+        {Color3.fromRGB(30, 40, 40), Color3.fromRGB(40, 45, 50), 315},
+        {Color3.fromRGB(45, 45, 50), Color3.fromRGB(30, 30, 35), 360}
     }
 }
 
+-- File name for key storage (hidden)
+local KEY_FILE = "SystemCache_9821.dat"
+local HWID_FILE = "SystemID_7392.dat"
+
+-- Generate simple HWID (Hardware ID) for extra security
+local function generateHWID()
+    return tostring(game:GetService("HttpService"):GenerateGUID(false))
+end
+
+-- Save key with HWID binding
+local function saveKey(key)
+    local success = pcall(function()
+        local hwid = generateHWID()
+        local data = {
+            key = key,
+            hwid = hwid,
+            timestamp = os.time()
+        }
+        writefile(KEY_FILE, HttpService:JSONEncode(data))
+        writefile(HWID_FILE, hwid)
+    end)
+    return success
+end
+
+-- Load and verify saved key
+local function loadSavedKey()
+    local success, result = pcall(function()
+        if not isfile(KEY_FILE) or not isfile(HWID_FILE) then
+            return nil
+        end
+        
+        local data = HttpService:JSONDecode(readfile(KEY_FILE))
+        local storedHWID = readfile(HWID_FILE)
+        
+        -- Verify HWID matches (prevents key sharing)
+        if data.hwid ~= storedHWID then
+            return nil
+        end
+        
+        -- Check if key is still valid
+        for _, validKey in ipairs(CONFIG.VALID_KEYS) do
+            if data.key:upper() == validKey:upper() then
+                return data.key
+            end
+        end
+        
+        return nil
+    end)
+    
+    return success and result or nil
+end
+
+-- Clear saved key (for logout/reset)
+local function clearSavedKey()
+    pcall(function()
+        if isfile(KEY_FILE) then delfile(KEY_FILE) end
+        if isfile(HWID_FILE) then delfile(HWID_FILE) end
+    end)
+end
+
+-- Load main script from GitHub
+local function loadMainScript()
+    local success, result = pcall(function()
+        local response = game:HttpGet(CONFIG.MAIN_SCRIPT_URL)
+        if response and #response > 0 then
+            return loadstring(response)()
+        else
+            error("Failed to fetch main script")
+        end
+    end)
+    
+    if not success then
+        warn("Failed to load main script: " .. tostring(result))
+        -- Fallback: Show error UI
+        showErrorFrame("Failed to load main script. Please check your internet connection.")
+    end
+    
+    return success
+end
+
+-- Check for saved key on startup
+local savedKey = loadSavedKey()
+if savedKey then
+    print("Key found! Loading main script...")
+    loadMainScript()
+    return -- Exit key system script
+end
+
+-- If no saved key, show key system UI
 -- Create ScreenGui
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "PremiumKeySystem"
@@ -58,7 +150,6 @@ mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = true
 mainFrame.Parent = screenGui
 
--- Main corner radius
 local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 16)
 mainCorner.Parent = mainFrame
@@ -72,13 +163,12 @@ bgGradient.Color = ColorSequence.new({
 bgGradient.Rotation = CONFIG.GRADIENT_PRESETS[1][3]
 bgGradient.Parent = mainFrame
 
--- Main Frame Stroke
 local mainStroke = Instance.new("UIStroke")
 mainStroke.Color = CONFIG.COLORS.Stroke
 mainStroke.Thickness = 1.5
 mainStroke.Parent = mainFrame
 
--- Close Button (No background)
+-- Close Button
 local closeButton = Instance.new("TextButton")
 closeButton.Name = "CloseButton"
 closeButton.Size = UDim2.new(0, 30, 0, 30)
@@ -92,7 +182,7 @@ closeButton.TextSize = 18
 closeButton.ZIndex = 10
 closeButton.Parent = mainFrame
 
--- Glossy overlay (preserves readability)
+-- Glossy overlay
 local glossOverlay = Instance.new("Frame")
 glossOverlay.Name = "GlossOverlay"
 glossOverlay.Size = UDim2.new(1, 0, 1, 0)
@@ -106,7 +196,7 @@ local glossCorner = Instance.new("UICorner")
 glossCorner.CornerRadius = UDim.new(0, 16)
 glossCorner.Parent = glossOverlay
 
--- Content Container (holds all UI elements above the gradient)
+-- Content Container
 local contentContainer = Instance.new("Frame")
 contentContainer.Name = "ContentContainer"
 contentContainer.Size = UDim2.new(1, 0, 1, 0)
@@ -154,13 +244,11 @@ local inputCorner = Instance.new("UICorner")
 inputCorner.CornerRadius = UDim.new(0, 10)
 inputCorner.Parent = inputFrame
 
--- Input Stroke
 local inputStroke = Instance.new("UIStroke")
 inputStroke.Color = CONFIG.COLORS.InputStroke
 inputStroke.Thickness = 1.2
 inputStroke.Parent = inputFrame
 
--- Input gloss effect
 local inputGloss = Instance.new("Frame")
 inputGloss.Name = "InputGloss"
 inputGloss.Size = UDim2.new(1, 0, 0.5, 0)
@@ -174,7 +262,6 @@ local inputGlossCorner = Instance.new("UICorner")
 inputGlossCorner.CornerRadius = UDim.new(0, 10)
 inputGlossCorner.Parent = inputGloss
 
--- TextBox for key input
 local keyInput = Instance.new("TextBox")
 keyInput.Name = "KeyInput"
 keyInput.Size = UDim2.new(1, -20, 1, 0)
@@ -199,7 +286,7 @@ buttonContainer.BackgroundTransparency = 1
 buttonContainer.ZIndex = 5
 buttonContainer.Parent = contentContainer
 
--- Get Key Button with Gradient
+-- Get Key Button
 local getKeyButton = Instance.new("TextButton")
 getKeyButton.Name = "GetKeyButton"
 getKeyButton.Size = UDim2.new(0, 155, 1, 0)
@@ -218,7 +305,6 @@ local getKeyCorner = Instance.new("UICorner")
 getKeyCorner.CornerRadius = UDim.new(0, 10)
 getKeyCorner.Parent = getKeyButton
 
--- Get Key Gradient
 local getKeyGradient = Instance.new("UIGradient")
 getKeyGradient.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(0, CONFIG.COLORS.GetKeyStart),
@@ -227,13 +313,12 @@ getKeyGradient.Color = ColorSequence.new({
 getKeyGradient.Rotation = 90
 getKeyGradient.Parent = getKeyButton
 
--- Get Key Stroke
 local getKeyStroke = Instance.new("UIStroke")
 getKeyStroke.Color = Color3.fromRGB(100, 100, 110)
 getKeyStroke.Thickness = 1
 getKeyStroke.Parent = getKeyButton
 
--- Verify Button with Gradient
+-- Verify Button
 local verifyButton = Instance.new("TextButton")
 verifyButton.Name = "VerifyButton"
 verifyButton.Size = UDim2.new(0, 155, 1, 0)
@@ -252,7 +337,6 @@ local verifyCorner = Instance.new("UICorner")
 verifyCorner.CornerRadius = UDim.new(0, 10)
 verifyCorner.Parent = verifyButton
 
--- Verify Gradient
 local verifyGradient = Instance.new("UIGradient")
 verifyGradient.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(0, CONFIG.COLORS.VerifyStart),
@@ -261,7 +345,6 @@ verifyGradient.Color = ColorSequence.new({
 verifyGradient.Rotation = 90
 verifyGradient.Parent = verifyButton
 
--- Verify Stroke
 local verifyStroke = Instance.new("UIStroke")
 verifyStroke.Color = Color3.fromRGB(140, 150, 255)
 verifyStroke.Thickness = 1
@@ -280,7 +363,7 @@ statusLabel.TextSize = 13
 statusLabel.ZIndex = 5
 statusLabel.Parent = contentContainer
 
--- Footer text - Centered
+-- Footer
 local footerFrame = Instance.new("Frame")
 footerFrame.Name = "Footer"
 footerFrame.Size = UDim2.new(0, 320, 0, 40)
@@ -303,7 +386,6 @@ footerList.SortOrder = Enum.SortOrder.LayoutOrder
 footerList.Padding = UDim.new(0, 4)
 footerList.Parent = footerContainer
 
--- Footer text segments
 local text1 = Instance.new("TextLabel")
 text1.Name = "Text1"
 text1.Size = UDim2.new(0, 0, 1, 0)
@@ -356,7 +438,7 @@ textDiscord.LayoutOrder = 4
 textDiscord.ZIndex = 5
 textDiscord.Parent = footerContainer
 
--- Animation Setup
+-- Animations
 local TWEEN_INFO = {
     Hover = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
     Click = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -367,12 +449,11 @@ local TWEEN_INFO = {
 }
 
 -- Floating animation
-local floatTween = TweenService:Create(mainFrame, TWEEN_INFO.Float, {
+TweenService:Create(mainFrame, TWEEN_INFO.Float, {
     Position = UDim2.new(0.5, -200, 0.5, -145)
-})
-floatTween:Play()
+}):Play()
 
--- Gradient Animation System
+-- Gradient Animation
 local currentGradientIndex = 1
 local isGradientAnimating = false
 
@@ -388,7 +469,6 @@ local function animateToNextGradient()
     local preset = CONFIG.GRADIENT_PRESETS[currentGradientIndex]
     local color1, color2, rotation = preset[1], preset[2], preset[3]
     
-    -- Create smooth transition for colors
     local colorTween = TweenService:Create(bgGradient, TWEEN_INFO.GradientShift, {
         Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, color1),
@@ -399,17 +479,15 @@ local function animateToNextGradient()
     
     colorTween.Completed:Connect(function()
         isGradientAnimating = false
-        -- Wait a bit before next transition
         task.delay(2, animateToNextGradient)
     end)
     
     colorTween:Play()
 end
 
--- Start gradient loop
 task.delay(2, animateToNextGradient)
 
--- Close Button Functionality
+-- Close Button
 closeButton.MouseEnter:Connect(function()
     TweenService:Create(closeButton, TWEEN_INFO.Hover, {
         TextColor3 = CONFIG.COLORS.CloseButtonHover,
@@ -425,35 +503,26 @@ closeButton.MouseLeave:Connect(function()
 end)
 
 closeButton.MouseButton1Click:Connect(function()
-    -- Close animation
     TweenService:Create(mainFrame, TWEEN_INFO.Close, {
         Size = UDim2.new(0, 0, 0, 0),
         Position = UDim2.new(0.5, 0, 0.5, 0),
         Rotation = 10
     }):Play()
     
-    -- Fade out all content
     for _, child in ipairs(mainFrame:GetDescendants()) do
         if child:IsA("GuiObject") then
             if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
-                TweenService:Create(child, TWEEN_INFO.Close, {
-                    TextTransparency = 1
-                }):Play()
+                TweenService:Create(child, TWEEN_INFO.Close, {TextTransparency = 1}):Play()
             end
             if child:IsA("Frame") then
-                TweenService:Create(child, TWEEN_INFO.Close, {
-                    BackgroundTransparency = 1
-                }):Play()
+                TweenService:Create(child, TWEEN_INFO.Close, {BackgroundTransparency = 1}):Play()
             end
             if child:IsA("UIStroke") then
-                TweenService:Create(child, TWEEN_INFO.Close, {
-                    Transparency = 1
-                }):Play()
+                TweenService:Create(child, TWEEN_INFO.Close, {Transparency = 1}):Play()
             end
         end
     end
     
-    -- Destroy after animation
     task.delay(0.4, function()
         screenGui:Destroy()
     end)
@@ -475,9 +544,7 @@ local function setupGradientButtonHover(button, gradient, originalStart, origina
         }):Play()
         
         if stroke then
-            TweenService:Create(stroke, TWEEN_INFO.Hover, {
-                Transparency = 0.5
-            }):Play()
+            TweenService:Create(stroke, TWEEN_INFO.Hover, {Transparency = 0.5}):Play()
         end
     end)
     
@@ -495,67 +562,37 @@ local function setupGradientButtonHover(button, gradient, originalStart, origina
         }):Play()
         
         if stroke then
-            TweenService:Create(stroke, TWEEN_INFO.Hover, {
-                Transparency = 0
-            }):Play()
+            TweenService:Create(stroke, TWEEN_INFO.Hover, {Transparency = 0}):Play()
         end
     end)
     
     button.MouseButton1Down:Connect(function()
-        TweenService:Create(button, TWEEN_INFO.Click, {
-            Size = UDim2.new(0, 151, 0, 41)
-        }):Play()
+        TweenService:Create(button, TWEEN_INFO.Click, {Size = UDim2.new(0, 151, 0, 41)}):Play()
     end)
     
     button.MouseButton1Up:Connect(function()
-        TweenService:Create(button, TWEEN_INFO.Click, {
-            Size = UDim2.new(0, 159, 0, 49)
-        }):Play()
+        TweenService:Create(button, TWEEN_INFO.Click, {Size = UDim2.new(0, 159, 0, 49)}):Play()
     end)
 end
 
-setupGradientButtonHover(
-    getKeyButton, 
-    getKeyGradient, 
-    CONFIG.COLORS.GetKeyStart, 
-    CONFIG.COLORS.GetKeyEnd,
-    Color3.fromRGB(100, 100, 110),
-    Color3.fromRGB(70, 70, 80),
-    getKeyStroke
-)
+setupGradientButtonHover(getKeyButton, getKeyGradient, CONFIG.COLORS.GetKeyStart, CONFIG.COLORS.GetKeyEnd,
+    Color3.fromRGB(100, 100, 110), Color3.fromRGB(70, 70, 80), getKeyStroke)
 
-setupGradientButtonHover(
-    verifyButton, 
-    verifyGradient, 
-    CONFIG.COLORS.VerifyStart, 
-    CONFIG.COLORS.VerifyEnd,
-    Color3.fromRGB(150, 160, 255),
-    Color3.fromRGB(110, 123, 255),
-    verifyStroke
-)
+setupGradientButtonHover(verifyButton, verifyGradient, CONFIG.COLORS.VerifyStart, CONFIG.COLORS.VerifyEnd,
+    Color3.fromRGB(150, 160, 255), Color3.fromRGB(110, 123, 255), verifyStroke)
 
--- Input field focus effect
+-- Input effects
 keyInput.Focused:Connect(function()
-    TweenService:Create(inputFrame, TWEEN_INFO.Hover, {
-        BackgroundColor3 = Color3.fromRGB(55, 55, 65)
-    }):Play()
-    TweenService:Create(inputStroke, TWEEN_INFO.Hover, {
-        Color = Color3.fromRGB(120, 120, 140),
-        Thickness = 1.8
-    }):Play()
+    TweenService:Create(inputFrame, TWEEN_INFO.Hover, {BackgroundColor3 = Color3.fromRGB(55, 55, 65)}):Play()
+    TweenService:Create(inputStroke, TWEEN_INFO.Hover, {Color = Color3.fromRGB(120, 120, 140), Thickness = 1.8}):Play()
 end)
 
 keyInput.FocusLost:Connect(function()
-    TweenService:Create(inputFrame, TWEEN_INFO.Hover, {
-        BackgroundColor3 = CONFIG.COLORS.InputBg
-    }):Play()
-    TweenService:Create(inputStroke, TWEEN_INFO.Hover, {
-        Color = CONFIG.COLORS.InputStroke,
-        Thickness = 1.2
-    }):Play()
+    TweenService:Create(inputFrame, TWEEN_INFO.Hover, {BackgroundColor3 = CONFIG.COLORS.InputBg}):Play()
+    TweenService:Create(inputStroke, TWEEN_INFO.Hover, {Color = CONFIG.COLORS.InputStroke, Thickness = 1.2}):Play()
 end)
 
--- Get Key functionality
+-- Get Key
 getKeyButton.MouseButton1Click:Connect(function()
     statusLabel.Text = "Link copied to clipboard!"
     statusLabel.TextColor3 = CONFIG.COLORS.Success
@@ -571,7 +608,7 @@ getKeyButton.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Verify functionality
+-- Verify and Load Main Script
 verifyButton.MouseButton1Click:Connect(function()
     local enteredKey = keyInput.Text:gsub("%s+", "")
     
@@ -597,36 +634,38 @@ verifyButton.MouseButton1Click:Connect(function()
     end
     
     if isValid then
-        statusLabel.Text = "Key verified successfully! Loading..."
+        -- Save key for future use
+        local saved = saveKey(enteredKey)
+        if saved then
+            print("Key saved successfully!")
+        else
+            warn("Failed to save key (executor may not support file system)")
+        end
+        
+        statusLabel.Text = "Success! Loading main script..."
         statusLabel.TextColor3 = CONFIG.COLORS.Success
         
-        TweenService:Create(mainFrame, TWEEN_INFO.Fade, {
-            BackgroundTransparency = 1
-        }):Play()
+        -- Success animation
+        TweenService:Create(mainFrame, TWEEN_INFO.Fade, {BackgroundTransparency = 1}):Play()
         
         for _, child in ipairs(mainFrame:GetDescendants()) do
             if child:IsA("GuiObject") and child ~= mainFrame then
                 if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
-                    TweenService:Create(child, TWEEN_INFO.Fade, {
-                        TextTransparency = 1
-                    }):Play()
+                    TweenService:Create(child, TWEEN_INFO.Fade, {TextTransparency = 1}):Play()
                 end
                 if child:IsA("Frame") then
-                    TweenService:Create(child, TWEEN_INFO.Fade, {
-                        BackgroundTransparency = 1
-                    }):Play()
+                    TweenService:Create(child, TWEEN_INFO.Fade, {BackgroundTransparency = 1}):Play()
                 end
                 if child:IsA("UIStroke") then
-                    TweenService:Create(child, TWEEN_INFO.Fade, {
-                        Transparency = 1
-                    }):Play()
+                    TweenService:Create(child, TWEEN_INFO.Fade, {Transparency = 1}):Play()
                 end
             end
         end
         
+        -- Load main script after animation
         task.delay(0.6, function()
             screenGui:Destroy()
-            print("Key verified! Load your script here.")
+            loadMainScript()
         end)
     else
         statusLabel.Text = "Invalid key! Please try again."
@@ -661,7 +700,6 @@ for _, child in ipairs(mainFrame:GetDescendants()) do
     end
 end
 
--- Animate in
 task.wait(0.1)
 TweenService:Create(mainFrame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
     Position = UDim2.new(0.5, -200, 0.5, -150),
@@ -677,12 +715,7 @@ task.delay(0.2, function()
                 }):Play()
             end
             if child:IsA("Frame") and child.Name ~= "GlossOverlay" and child.Name ~= "InputGloss" then
-                local originalTransparency = 0
-                if child.Name == "InputFrame" or child.Name == "GetKeyButton" or child.Name == "VerifyButton" then
-                    originalTransparency = 0
-                else
-                    originalTransparency = 1
-                end
+                local originalTransparency = (child.Name == "InputFrame" or child.Name == "GetKeyButton" or child.Name == "VerifyButton") and 0 or 1
                 TweenService:Create(child, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     BackgroundTransparency = originalTransparency
                 }):Play()
