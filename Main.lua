@@ -1,6 +1,6 @@
 --[[
-    Premium Main Hub - Polished UI with Fixes
-    Features: Avatar display, Lucide icons, Server management, Fixed minimize system
+    Nexus Main Hub - Fixed Version
+    Repo: https://github.com/NexusHuby/Nexus-Libary
 ]]
 
 local Players = game:GetService("Players")
@@ -8,14 +8,12 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 -- Configuration
 local CONFIG = {
-    TITLE = "PREMIUM HUB",
-    LUCIDE_ICONS_URL = "https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/refs/heads/main/Lucidicons.lua", -- Replace with your repo
+    TITLE = "NEXUS HUB",
     COLORS = {
         Background = Color3.fromRGB(25, 25, 30),
         BackgroundTransparency = 0.08,
@@ -32,43 +30,32 @@ local CONFIG = {
     }
 }
 
--- Load Lucide Icons (Fallback to text if not available)
-local LucideIcons = {}
-local iconsLoaded, iconsError = pcall(function()
-    local response = game:HttpGet(CONFIG.LUCIDE_ICONS_URL)
-    if response then
-        LucideIcons = loadstring(response)()
-    end
-end)
-
-if not iconsLoaded then
-    -- Fallback icons
-    LucideIcons = {
-        home = "⌂",
-        zap = "⚡",
-        gamepad = "🎮",
-        code = "❮❯",
-        settings = "⚙",
-        user = "👤",
-        shield = "🛡",
-        check = "✓",
-        x = "✕",
-        minus = "−",
-        menu = "☰",
-        chevronRight = "❯",
-        search = "🔍",
-        refresh = "↻",
-        copy = "📋",
-        externalLink = "↗",
-        users = "👥",
-        logOut = "→",
-        sparkles = "✨"
-    }
-end
+-- Lucide Icons
+local LucideIcons = {
+    home = "⌂",
+    zap = "⚡",
+    gamepad = "🎮",
+    code = "❮❯",
+    settings = "⚙",
+    user = "👤",
+    shield = "🛡",
+    check = "✓",
+    x = "✕",
+    minus = "−",
+    menu = "☰",
+    chevronRight = "❯",
+    search = "🔍",
+    refresh = "↻",
+    copy = "📋",
+    externalLink = "↗",
+    users = "👥",
+    logOut = "→",
+    sparkles = "✨"
+}
 
 -- Create Main GUI
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "PremiumMainHub"
+screenGui.Name = "NexusMainHub"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = playerGui
@@ -124,7 +111,7 @@ end)
 
 -- Glossy Overlay
 local glossOverlay = Instance.new("Frame")
-glossOverlay.Name = "Gloss"
+glossOverlay.Name = "GlossOverlay"
 glossOverlay.Size = UDim2.new(1, 0, 0.6, 0)
 glossOverlay.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 glossOverlay.BackgroundTransparency = 0.95
@@ -195,7 +182,7 @@ local closeBtn = Instance.new("TextButton")
 closeBtn.Name = "CloseBtn"
 closeBtn.Size = UDim2.new(0, 32, 0, 32)
 closeBtn.Position = UDim2.new(1, -42, 0.5, -16)
-closeBtn.BackgroundTransparency = 1 -- Fully transparent
+closeBtn.BackgroundTransparency = 1
 closeBtn.BorderSizePixel = 0
 closeBtn.Font = Enum.Font.GothamBold
 closeBtn.Text = LucideIcons.x
@@ -242,7 +229,7 @@ local minBtn = Instance.new("TextButton")
 minBtn.Name = "MinBtn"
 minBtn.Size = UDim2.new(0, 32, 0, 32)
 minBtn.Position = UDim2.new(1, -80, 0.5, -16)
-minBtn.BackgroundTransparency = 1 -- Fully transparent
+minBtn.BackgroundTransparency = 1
 minBtn.BorderSizePixel = 0
 minBtn.Font = Enum.Font.GothamBold
 minBtn.Text = LucideIcons.minus
@@ -264,12 +251,13 @@ local function createDragButton()
     local btn = Instance.new("ImageButton")
     btn.Name = "DragToggleBtn"
     btn.Size = UDim2.new(0, 50, 0, 50)
-    -- Use saved position or default
+    
     if savedButtonPosition then
         btn.Position = savedButtonPosition
     else
         btn.Position = UDim2.new(0, 100, 0, 100)
     end
+    
     btn.BackgroundColor3 = CONFIG.COLORS.Accent
     btn.BackgroundTransparency = 0.2
     btn.BorderSizePixel = 0
@@ -317,7 +305,7 @@ local function createDragButton()
     -- Drag functionality for button
     local btnDragging = false
     local btnDragInput, btnDragStart, btnStartPos
-    local dragThreshold = 5 -- pixels to consider a drag vs click
+    local dragThreshold = 5
     
     local function updateBtnDrag(input)
         local delta = input.Position - btnDragStart
@@ -326,7 +314,7 @@ local function createDragButton()
     
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            btnDragging = false -- Start as false, set to true if moved
+            btnDragging = false
             btnDragStart = input.Position
             btnStartPos = btn.Position
             
@@ -335,7 +323,6 @@ local function createDragButton()
                 if input.UserInputState == Enum.UserInputState.End then
                     connection:Disconnect()
                     if not btnDragging then
-                        -- It was a click, not a drag
                         isMinimized = not isMinimized
                         if isMinimized then
                             mainFrame.Visible = false
@@ -347,7 +334,6 @@ local function createDragButton()
                             }):Play()
                         end
                     else
-                        -- Save position after drag
                         savedButtonPosition = btn.Position
                     end
                 end
@@ -359,7 +345,6 @@ local function createDragButton()
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             btnDragInput = input
             
-            -- Check if moved enough to be considered a drag
             if btnDragStart then
                 local delta = (input.Position - btnDragStart).Magnitude
                 if delta > dragThreshold then
@@ -413,7 +398,6 @@ minBtn.MouseButton1Click:Connect(function()
     mainFrame.Visible = false
     dragButton.Visible = true
     
-    -- Position drag button near where main frame was
     if not savedButtonPosition then
         dragButton.Position = UDim2.new(0, mainFrame.AbsolutePosition.X + 650, 0, mainFrame.AbsolutePosition.Y + 20)
     end
@@ -434,7 +418,6 @@ sidebar.BackgroundTransparency = 0.3
 sidebar.BorderSizePixel = 0
 sidebar.Parent = mainFrame
 
--- FIX: Remove the black bar by not using a fix frame, instead clip corners properly
 local sidebarCorner = Instance.new("UICorner")
 sidebarCorner.CornerRadius = UDim.new(0, 0)
 sidebarCorner.Parent = sidebar
@@ -717,7 +700,7 @@ local jobIdValue = Instance.new("TextLabel")
 jobIdValue.Size = UDim2.new(1, -30, 0, 30)
 jobIdValue.Position = UDim2.new(0, 15, 0, 40)
 jobIdValue.BackgroundTransparency = 1
-jobIdValue.Font = Enum.Font.Gotham)
+jobIdValue.Font = Enum.Font.Gotham
 jobIdValue.Text = game.JobId
 jobIdValue.TextColor3 = CONFIG.COLORS.White
 jobIdValue.TextSize = 14
@@ -814,7 +797,6 @@ serverHopBtn.MouseLeave:Connect(function()
 end)
 
 serverHopBtn.MouseButton1Click:Connect(function()
-    -- Simple server hop
     local servers = {}
     local req = game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
     local data = HttpService:JSONDecode(req)
@@ -933,7 +915,7 @@ playersTitle.TextSize = 16
 playersTitle.Parent = serverFrame
 
 local playersContainer = Instance.new("Frame")
-playersContainer.Size = UDim2.new(1, -20, 0, 0) -- Will expand dynamically
+playersContainer.Size = UDim2.new(1, -20, 0, 0)
 playersContainer.Position = UDim2.new(0, 10, 0, 365)
 playersContainer.BackgroundTransparency = 1
 playersContainer.Parent = serverFrame
@@ -943,7 +925,6 @@ playersList.Padding = UDim.new(0, 5)
 playersList.Parent = playersContainer
 
 local function updatePlayerList()
-    -- Clear existing
     for _, child in ipairs(playersContainer:GetChildren()) do
         if child:IsA("Frame") then child:Destroy() end
     end
@@ -982,7 +963,6 @@ local function updatePlayerList()
         plrName.TextXAlignment = Enum.TextXAlignment.Left
         plrName.Parent = plrCard
         
-        -- Hover effect
         plrCard.MouseEnter:Connect(function()
             TweenService:Create(plrCard, TweenInfo.new(0.2), {BackgroundTransparency = 0.2}):Play()
         end)
@@ -1003,12 +983,10 @@ Players.PlayerRemoving:Connect(updatePlayerList)
 
 -- Profile Button Click - Show Server Tab
 profileButton.MouseButton1Click:Connect(function()
-    -- Hide all tabs
     for _, frame in pairs(contentFrames) do
         frame.Visible = false
     end
     
-    -- Reset all tab visuals
     for btn, data in pairs(tabs) do
         TweenService:Create(btn, TweenInfo.new(0.2), {
             BackgroundColor3 = CONFIG.COLORS.Background,
@@ -1063,7 +1041,6 @@ local function createFeatureButton(name, description)
     desc.TextXAlignment = Enum.TextXAlignment.Left
     desc.Parent = btn
     
-    -- Toggle
     local toggle = Instance.new("Frame")
     toggle.Size = UDim2.new(0, 44, 0, 24)
     toggle.Position = UDim2.new(1, -59, 0.5, -12)
@@ -1175,8 +1152,8 @@ end)
 
 resetBtn.MouseButton1Click:Connect(function()
     pcall(function()
-        if isfile("SystemCache_9821.dat") then delfile("SystemCache_9821.dat") end
-        if isfile("SystemID_7392.dat") then delfile("SystemID_7392.dat") end
+        if isfile("NexusCache_9821.dat") then delfile("NexusCache_9821.dat") end
+        if isfile("NexusID_7392.dat") then delfile("NexusID_7392.dat") end
     end)
     resetBtn.Text = "Reset!"
     task.delay(1, function()
@@ -1203,4 +1180,4 @@ TweenService:Create(mainFrame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.Ea
     Rotation = 0
 }):Play()
 
-print("Premium Main Hub Loaded Successfully! Welcome " .. player.Name)
+print("Nexus Main Hub Loaded Successfully! Welcome " .. player.Name)
