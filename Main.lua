@@ -1,5 +1,5 @@
 --[[
-    Nexus|Escape Tsunami for Brainrots - Complete Edition
+    Nexus|Escape Tsunami for Brainrots - Complete Edition Fixed
 ]]
 
 local Players = game:GetService("Players")
@@ -76,7 +76,8 @@ local CONFIG = {
         Gray = Color3.fromRGB(180, 180, 180),
         DarkGray = Color3.fromRGB(100, 100, 100),
         Hover = Color3.fromRGB(55, 55, 65),
-        ESP = Color3.fromRGB(255, 0, 0)
+        ESP = Color3.fromRGB(255, 0, 0),
+        DropdownBg = Color3.fromRGB(30, 30, 35)
     }
 }
 
@@ -110,6 +111,7 @@ local autoCollectSpecificBrainrot = false
 local selectedBrainrotToCollect = nil
 local isCollectingBrainrot = false
 local positionBeforeCollecting = nil
+local brainrotDropdownOpen = false
 
 -- Settings Tab Variables - SMART GAP SYSTEM
 local autoGapEnabled = false
@@ -193,7 +195,6 @@ local function getAllBrainrotsFromStorage()
     local brainrotsFolder = assets:FindFirstChild("Brainrots")
     if not brainrotsFolder then return brainrotList end
     
-    -- Go through rarities in order
     for _, rarity in ipairs(RARITY_ORDER) do
         local rarityFolder = brainrotsFolder:FindFirstChild(rarity)
         if rarityFolder then
@@ -212,16 +213,24 @@ local function getAllBrainrotsFromStorage()
     return brainrotList
 end
 
--- NEW: Find specific brainrot in ActiveBrainrots
+-- NEW: Find specific brainrot in ActiveBrainrots - IMPROVED
 local function findBrainrotInActive(brainrotName, rarity)
     local activeBrainrots = Workspace:FindFirstChild("ActiveBrainrots")
-    if not activeBrainrots then return nil end
+    if not activeBrainrots then 
+        warn("ActiveBrainrots folder not found!")
+        return nil 
+    end
     
-    -- If rarity specified, only check that folder, otherwise check all
+    print("Looking for brainrot:", brainrotName, "in rarity:", rarity or "any")
+    
     local foldersToCheck = {}
     if rarity then
         local folder = activeBrainrots:FindFirstChild(rarity)
-        if folder then table.insert(foldersToCheck, folder) end
+        if folder then 
+            table.insert(foldersToCheck, folder) 
+        else
+            warn("Rarity folder not found:", rarity)
+        end
     else
         for _, folder in ipairs(activeBrainrots:GetChildren()) do
             if folder:IsA("Folder") then
@@ -231,21 +240,38 @@ local function findBrainrotInActive(brainrotName, rarity)
     end
     
     for _, folder in ipairs(foldersToCheck) do
+        print("Checking folder:", folder.Name)
         for _, renderedBrainrot in ipairs(folder:GetChildren()) do
             if renderedBrainrot:IsA("Model") and renderedBrainrot.Name == "RenderedBrainrot" then
-                -- Check if this brainrot matches the name we're looking for
-                -- The actual brainrot model is usually inside RenderedBrainrot
+                -- Check if this RenderedBrainrot contains our target brainrot
                 for _, child in ipairs(renderedBrainrot:GetChildren()) do
                     if child:IsA("Model") and child.Name == brainrotName then
-                        -- Found it! Get the primary part or any part for position
-                        local targetPart = renderedBrainrot.PrimaryPart or renderedBrainrot:FindFirstChildWhichIsA("BasePart")
+                        print("Found brainrot model inside RenderedBrainrot:", child.Name)
+                        
+                        -- Get the primary part or any BasePart for position
+                        local targetPart = renderedBrainrot.PrimaryPart 
+                        if not targetPart then
+                            targetPart = renderedBrainrot:FindFirstChild("HumanoidRootPart")
+                        end
+                        if not targetPart then
+                            targetPart = renderedBrainrot:FindFirstChildWhichIsA("BasePart")
+                        end
+                        if not targetPart and child then
+                            targetPart = child:FindFirstChildWhichIsA("BasePart")
+                        end
+                        
                         if targetPart then
+                            print("Found target part at position:", targetPart.Position)
                             return {
                                 model = renderedBrainrot,
+                                brainrotModel = child,
                                 part = targetPart,
                                 name = brainrotName,
-                                rarity = folder.Name
+                                rarity = folder.Name,
+                                cframe = targetPart.CFrame
                             }
+                        else
+                            warn("Found brainrot but no BasePart for position!")
                         end
                     end
                 end
@@ -253,10 +279,11 @@ local function findBrainrotInActive(brainrotName, rarity)
         end
     end
     
+    print("Brainrot not found:", brainrotName)
     return nil
 end
 
--- NEW: Safe tween with wave avoidance
+-- NEW: Safe tween with wave avoidance - IMPROVED
 local function safeTweenToPosition(targetPosition, targetCFrame)
     local success = false
     
@@ -277,7 +304,6 @@ local function safeTweenToPosition(targetPosition, targetCFrame)
                 local distToWave = (humanoidRootPart.Position - wavePart.Position).Magnitude
                 local distToTarget = (targetPosition - wavePart.Position).Magnitude
                 
-                -- If wave is between us and target, or very close
                 if distToWave < gapDetectionRange or distToTarget < gapDetectionRange then
                     shouldUseGap = true
                     break
@@ -287,7 +313,6 @@ local function safeTweenToPosition(targetPosition, targetCFrame)
     end
     
     if shouldUseGap then
-        -- Find nearest gap
         local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
         if defaultMap then
             local gapsFolder = defaultMap:FindFirstChild("Gaps")
@@ -310,7 +335,7 @@ local function safeTweenToPosition(targetPosition, targetCFrame)
                 end
                 
                 if bestGap then
-                    -- Tween to gap first
+                    print("Going to gap first:", bestGap.Position)
                     local gapTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = bestGap.CFrame + gapSafetyOffset})
                     gapTween:Play()
                     gapTween.Completed:Wait()
@@ -321,6 +346,7 @@ local function safeTweenToPosition(targetPosition, targetCFrame)
     end
     
     -- Now tween to target
+    print("Tweening to target:", targetPosition)
     local finalTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = targetCFrame})
     finalTween:Play()
     finalTween.Completed:Wait()
@@ -329,7 +355,7 @@ local function safeTweenToPosition(targetPosition, targetCFrame)
     return success
 end
 
--- NEW: Auto Collect Specific Brainrot Loop
+-- NEW: Auto Collect Specific Brainrot Loop - IMPROVED
 local function autoCollectSpecificBrainrotLoop()
     print("Auto Collect Specific Brainrot started for:", selectedBrainrotToCollect and selectedBrainrotToCollect.name or "None")
     
@@ -342,10 +368,11 @@ local function autoCollectSpecificBrainrotLoop()
             end
             
             -- Look for the brainrot
+            print("Searching for brainrot:", selectedBrainrotToCollect.name)
             local foundBrainrot = findBrainrotInActive(selectedBrainrotToCollect.name, selectedBrainrotToCollect.rarity)
             
             if foundBrainrot then
-                print("Found brainrot:", foundBrainrot.name, "at", foundBrainrot.part.Position)
+                print("FOUND brainrot:", foundBrainrot.name, "at position:", foundBrainrot.part.Position)
                 isCollectingBrainrot = true
                 
                 -- Save current position
@@ -353,33 +380,57 @@ local function autoCollectSpecificBrainrotLoop()
                 print("Saved position before collecting:", positionBeforeCollecting.Position)
                 
                 -- Tween to brainrot with wave avoidance
-                local targetCFrame = foundBrainrot.part.CFrame + Vector3.new(0, 3, 0)
-                safeTweenToPosition(foundBrainrot.part.Position, targetCFrame)
+                local targetCFrame = foundBrainrot.cframe + Vector3.new(0, 5, 0) -- Go slightly above
+                local tweenSuccess = safeTweenToPosition(foundBrainrot.part.Position, targetCFrame)
                 
-                -- Collect the brainrot
-                task.wait(0.5)
-                if UpdateCollectedBrainrots then
-                    -- Fire the remote to collect
-                    UpdateCollectedBrainrots:FireServer(foundBrainrot.model)
-                    print("Fired UpdateCollectedBrainrots for:", foundBrainrot.name)
-                end
-                
-                -- Wait a moment for collection
-                task.wait(1)
-                
-                -- Return to base safely
-                print("Returning to base...")
-                local base = getPlayerBase()
-                if base then
-                    local basePart = base:FindFirstChildWhichIsA("BasePart", true)
-                    if basePart then
-                        safeTweenToPosition(basePart.Position, basePart.CFrame + Vector3.new(0, 5, 0))
+                if tweenSuccess then
+                    print("Arrived at brainrot, collecting...")
+                    
+                    -- Collect the brainrot - try multiple methods
+                    task.wait(0.5)
+                    
+                    -- Method 1: Fire remote
+                    if UpdateCollectedBrainrots then
+                        print("Firing UpdateCollectedBrainrots remote...")
+                        UpdateCollectedBrainrots:FireServer(foundBrainrot.model)
                     end
+                    
+                    -- Method 2: Touch the part
+                    print("Touching brainrot part...")
+                    firetouchinterest(humanoidRootPart, foundBrainrot.part, 0)
+                    task.wait(0.1)
+                    firetouchinterest(humanoidRootPart, foundBrainrot.part, 1)
+                    
+                    -- Method 3: Touch the brainrot model itself
+                    if foundBrainrot.brainrotModel then
+                        local brainrotPart = foundBrainrot.brainrotModel:FindFirstChildWhichIsA("BasePart")
+                        if brainrotPart then
+                            firetouchinterest(humanoidRootPart, brainrotPart, 0)
+                            task.wait(0.1)
+                            firetouchinterest(humanoidRootPart, brainrotPart, 1)
+                        end
+                    end
+                    
+                    -- Wait for collection
+                    task.wait(1.5)
+                    
+                    -- Return to base safely
+                    print("Returning to base...")
+                    local base = getPlayerBase()
+                    if base then
+                        local basePart = base:FindFirstChildWhichIsA("BasePart", true)
+                        if basePart then
+                            safeTweenToPosition(basePart.Position, basePart.CFrame + Vector3.new(0, 5, 0))
+                        end
+                    end
+                    
+                    print("Collection cycle complete!")
+                else
+                    warn("Failed to tween to brainrot")
                 end
                 
                 isCollectingBrainrot = false
                 positionBeforeCollecting = nil
-                print("Collection complete!")
                 
                 -- Wait before looking for next spawn
                 task.wait(3)
@@ -401,9 +452,9 @@ local function autoCollectSpecificBrainrotLoop()
     print("Auto Collect Specific Brainrot stopped")
 end
 
--- SMART GAP SYSTEM with position memory
+-- SMART GAP SYSTEM
 local function smartGapLoop()
-    print("Smart Auto Gap started - Position Memory Active")
+    print("Smart Auto Gap started")
     positionBeforeGap = nil
     
     while autoGapEnabled do
@@ -416,11 +467,9 @@ local function smartGapLoop()
             local gapsFolder = defaultMap:FindFirstChild("Gaps")
             if not gapsFolder then return end
             
-            -- Find ALL waves and calculate threat level
             local waves = {}
             for _, wave in ipairs(activeTsunamis:GetChildren()) do
                 local wavePart = nil
-                
                 if wave:IsA("BasePart") then
                     wavePart = wave
                 elseif wave:IsA("Model") then
@@ -443,10 +492,8 @@ local function smartGapLoop()
                 end
             end
             
-            -- Sort by threat level
             table.sort(waves, function(a, b) return a.threatLevel > b.threatLevel end)
             
-            -- Check if we need to be in a gap
             local nearestThreat = waves[1]
             local shouldBeInGap = false
             
@@ -463,13 +510,10 @@ local function smartGapLoop()
             end
             
             if shouldBeInGap then
-                -- Save position before entering gap (only once)
                 if not isInGap and not positionBeforeGap then
                     positionBeforeGap = humanoidRootPart.CFrame
-                    print("Saved position before gap:", positionBeforeGap.Position)
                 end
                 
-                -- Find best gap
                 local bestGap = nil
                 local bestScore = -math.huge
                 
@@ -494,7 +538,6 @@ local function smartGapLoop()
                     currentGapTarget = bestGap
                     isInGap = true
                     
-                    -- SPAM TWEEN to stay in gap
                     local targetCFrame = bestGap.CFrame + gapSafetyOffset
                     local currentDist = (humanoidRootPart.Position - bestGap.Position).Magnitude
                     
@@ -509,7 +552,6 @@ local function smartGapLoop()
                         humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
                     end
                     
-                    -- Anchor briefly if wave is extremely close
                     if nearestThreat and nearestThreat.distance < 20 then
                         humanoidRootPart.Anchored = true
                         task.wait(0.1)
@@ -518,13 +560,10 @@ local function smartGapLoop()
                     end
                 end
             else
-                -- No threat - return to original position if we were in a gap
                 if isInGap and positionBeforeGap then
-                    print("Wave passed! Returning to original position...")
                     local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = positionBeforeGap})
                     returnTween:Play()
                     returnTween.Completed:Wait()
-                    print("Returned to position:", positionBeforeGap.Position)
                     
                     isInGap = false
                     currentGapTarget = nil
@@ -544,7 +583,6 @@ local function smartGapLoop()
     end
     
     if isInGap and positionBeforeGap then
-        print("Auto Gap disabled - returning to saved position...")
         local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = positionBeforeGap})
         returnTween:Play()
     end
@@ -552,7 +590,6 @@ local function smartGapLoop()
     isInGap = false
     currentGapTarget = nil
     positionBeforeGap = nil
-    print("Smart Auto Gap stopped")
 end
 
 -- VISIBLE HITBOX
@@ -603,10 +640,6 @@ local function visibleHitboxLoop()
                 end
             end
         end)
-        
-        if not success then
-            warn("Visible hitbox error:", err)
-        end
         
         task.wait(0.5)
     end
@@ -819,47 +852,32 @@ local function autoUpgradeBaseLoop()
     while autoUpgradeBase do
         local success, err = pcall(function()
             local base = getPlayerBase()
-            if not base then
-                warn("No base found for upgrade")
-                return
-            end
+            if not base then return end
             
-            -- Try to find UpgradeBase model
-            local upgradeBaseModel = base:FindFirstChild("UpgradeBase")
-            if not upgradeBaseModel then
-                -- Try alternative names
-                upgradeBaseModel = base:FindFirstChild("Upgrade") or base:FindFirstChild("BaseUpgrade")
-            end
+            local upgradeBaseModel = base:FindFirstChild("UpgradeBase") or base:FindFirstChild("Upgrade") or base:FindFirstChild("BaseUpgrade")
             
             if upgradeBaseModel then
-                -- Look for Sign -> SurfaceGui -> Button
                 local sign = upgradeBaseModel:FindFirstChild("Sign")
                 if sign then
                     local surfaceGui = sign:FindFirstChild("SurfaceGui")
                     if surfaceGui then
                         local button = surfaceGui:FindFirstChild("Button")
-                        if button and button:IsA("ImageButton") or button:IsA("TextButton") then
-                            -- Fire the button
+                        if button and (button:IsA("ImageButton") or button:IsA("TextButton")) then
                             button.MouseButton1Click:Fire()
-                            print("Fired UpgradeBase button!")
                         else
-                            -- Try to find any button in the SurfaceGui
                             for _, child in ipairs(surfaceGui:GetDescendants()) do
                                 if child:IsA("ImageButton") or child:IsA("TextButton") then
                                     child.MouseButton1Click:Fire()
-                                    print("Fired button:", child.Name)
                                     break
                                 end
                             end
                         end
                     else
-                        -- Try to find any SurfaceGui
                         for _, child in ipairs(sign:GetDescendants()) do
                             if child:IsA("SurfaceGui") then
                                 for _, btn in ipairs(child:GetDescendants()) do
                                     if btn:IsA("ImageButton") or btn:IsA("TextButton") then
                                         btn.MouseButton1Click:Fire()
-                                        print("Fired button via search:", btn.Name)
                                         break
                                     end
                                 end
@@ -868,29 +886,20 @@ local function autoUpgradeBaseLoop()
                         end
                     end
                 else
-                    -- Try to find any clickable part in UpgradeBase
                     for _, child in ipairs(upgradeBaseModel:GetDescendants()) do
                         if child:IsA("ClickDetector") then
                             fireclickdetector(child)
-                            print("Fired ClickDetector:", child.Name)
                             break
                         elseif child:IsA("ProximityPrompt") then
                             fireproximityprompt(child)
-                            print("Fired ProximityPrompt:", child.Name)
                             break
                         end
                     end
                 end
-            else
-                warn("UpgradeBase model not found in base")
             end
         end)
         
-        if not success then
-            warn("Auto upgrade base error:", err)
-        end
-        
-        task.wait(2) -- Check every 2 seconds
+        task.wait(2)
     end
 end
 
@@ -929,7 +938,6 @@ local function autoCollectCashLoop()
         
         resetTimer = resetTimer + 0.05
         if resetTimer >= 5 then
-            print("Auto Collect: Resetting character...")
             local currentPos = humanoidRootPart.CFrame
             character:BreakJoints()
             resetTimer = 0
@@ -944,6 +952,37 @@ local function autoCollectCashLoop()
         task.wait(0.05)
     end
     autoCollectCashTweened = false
+end
+
+-- FIXED: Auto Collect Gold Bars - Teleport to player instead
+local function autoCollectGoldBarsLoop()
+    while autoCollectGoldBars do
+        local success, err = pcall(function()
+            local moneyEventParts = Workspace:FindFirstChild("MoneyEventParts")
+            if not moneyEventParts then return end
+            
+            for _, child in ipairs(moneyEventParts:GetChildren()) do
+                if not autoCollectGoldBars then break end
+                
+                if child:IsA("Model") and child.Name == "GoldBar" then
+                    local mainPart = child:FindFirstChild("Main")
+                    if mainPart and mainPart:IsA("BasePart") then
+                        -- TELEPORT GOLD BAR TO PLAYER instead of tweening to it
+                        mainPart.CFrame = humanoidRootPart.CFrame * CFrame.new(0, 0, -5)
+                        
+                        -- Try to collect
+                        firetouchinterest(humanoidRootPart, mainPart, 0)
+                        task.wait(0.1)
+                        firetouchinterest(humanoidRootPart, mainPart, 1)
+                        
+                        task.wait(0.2)
+                    end
+                end
+            end
+        end)
+        
+        task.wait(0.3) -- Faster checks
+    end
 end
 
 local function autoUpgradeSpeedLoop()
@@ -971,12 +1010,9 @@ end
 local function autoRebirthLoop()
     while autoRebirth do
         if RebirthFunction then
-            local success, result = pcall(function()
-                return RebirthFunction:InvokeServer()
+            pcall(function()
+                RebirthFunction:InvokeServer()
             end)
-            if success then
-                print("Rebirth attempted:", result)
-            end
         end
         task.wait(2)
     end
@@ -1000,32 +1036,6 @@ local function autoUpgradeBrainrotLoop()
                 UpgradeBrainrotFunction:InvokeServer(selectedBrainrotSlot)
             end)
         end
-        task.wait(0.5)
-    end
-end
-
-local function autoCollectGoldBarsLoop()
-    while autoCollectGoldBars do
-        local success, err = pcall(function()
-            local moneyEventParts = Workspace:FindFirstChild("MoneyEventParts")
-            if not moneyEventParts then return end
-            
-            for _, child in ipairs(moneyEventParts:GetChildren()) do
-                if not autoCollectGoldBars then break end
-                if child:IsA("Model") and child.Name == "GoldBar" then
-                    local mainPart = child:FindFirstChild("Main")
-                    if mainPart and mainPart:IsA("BasePart") then
-                        local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.3), {CFrame = mainPart.CFrame})
-                        tween:Play()
-                        tween.Completed:Wait()
-                        firetouchinterest(humanoidRootPart, mainPart, 0)
-                        task.wait(0.1)
-                        firetouchinterest(humanoidRootPart, mainPart, 1)
-                        task.wait(0.2)
-                    end
-                end
-            end
-        end)
         task.wait(0.5)
     end
 end
@@ -1440,13 +1450,14 @@ local function createSlider(parent, name, description, min, max, default, callba
     return frame
 end
 
--- NEW: Create Dropdown with all brainrots
-local function createBrainrotDropdown(parent, name, callback)
+-- NEW: REAL Dropdown Menu for Brainrots
+local function createRealBrainrotDropdown(parent, name)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, -20, 0, 80)
     frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
     frame.BackgroundTransparency = 0.3
     frame.BorderSizePixel = 0
+    frame.ClipsDescendants = true
     frame.Parent = parent
     
     local corner = Instance.new("UICorner")
@@ -1479,15 +1490,107 @@ local function createBrainrotDropdown(parent, name, callback)
     btnCorner.CornerRadius = UDim.new(0, 8)
     btnCorner.Parent = dropdownBtn
     
+    -- Dropdown menu frame (hidden by default)
+    local dropdownMenu = Instance.new("Frame")
+    dropdownMenu.Name = "DropdownMenu"
+    dropdownMenu.Size = UDim2.new(1, -30, 0, 200)
+    dropdownMenu.Position = UDim2.new(0, 15, 0, 75)
+    dropdownMenu.BackgroundColor3 = CONFIG.COLORS.DropdownBg
+    dropdownMenu.BorderSizePixel = 0
+    dropdownMenu.Visible = false
+    dropdownMenu.ZIndex = 10
+    dropdownMenu.Parent = frame
+    
+    local menuCorner = Instance.new("UICorner")
+    menuCorner.CornerRadius = UDim.new(0, 8)
+    menuCorner.Parent = dropdownMenu
+    
+    local menuStroke = Instance.new("UIStroke")
+    menuStroke.Color = CONFIG.COLORS.Accent
+    menuStroke.Thickness = 1
+    menuStroke.Parent = dropdownMenu
+    
+    -- Scrolling frame for options
+    local scrollingFrame = Instance.new("ScrollingFrame")
+    scrollingFrame.Size = UDim2.new(1, -10, 1, -10)
+    scrollingFrame.Position = UDim2.new(0, 5, 0, 5)
+    scrollingFrame.BackgroundTransparency = 1
+    scrollingFrame.BorderSizePixel = 0
+    scrollingFrame.ScrollBarThickness = 4
+    scrollingFrame.ScrollBarImageColor3 = CONFIG.COLORS.Accent
+    scrollingFrame.ZIndex = 10
+    scrollingFrame.Parent = dropdownMenu
+    
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0, 2)
+    listLayout.Parent = scrollingFrame
+    
     -- Get all brainrots
     local allBrainrots = getAllBrainrotsFromStorage()
-    local selectedIndex = 1
     
+    -- Populate dropdown
+    for _, brainrotInfo in ipairs(allBrainrots) do
+        local optionBtn = Instance.new("TextButton")
+        optionBtn.Size = UDim2.new(1, 0, 0, 25)
+        optionBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+        optionBtn.BorderSizePixel = 0
+        optionBtn.Font = Enum.Font.Gotham
+        optionBtn.Text = brainrotInfo.fullName
+        optionBtn.TextColor3 = CONFIG.COLORS.White
+        optionBtn.TextSize = 11
+        optionBtn.TextXAlignment = Enum.TextXAlignment.Left
+        optionBtn.ZIndex = 10
+        optionBtn.Parent = scrollingFrame
+        
+        local optionCorner = Instance.new("UICorner")
+        optionCorner.CornerRadius = UDim.new(0, 4)
+        optionCorner.Parent = optionBtn
+        
+        optionBtn.MouseEnter:Connect(function()
+            TweenService:Create(optionBtn, TweenInfo.new(0.1), {BackgroundColor3 = CONFIG.COLORS.Accent}):Play()
+        end)
+        
+        optionBtn.MouseLeave:Connect(function()
+            TweenService:Create(optionBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(45, 45, 55)}):Play()
+        end)
+        
+        optionBtn.MouseButton1Click:Connect(function()
+            selectedBrainrotToCollect = brainrotInfo
+            dropdownBtn.Text = brainrotInfo.fullName
+            dropdownMenu.Visible = false
+            brainrotDropdownOpen = false
+            print("Selected brainrot:", brainrotInfo.fullName)
+        end)
+    end
+    
+    scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, #allBrainrots * 27)
+    
+    -- Toggle dropdown
     dropdownBtn.MouseButton1Click:Connect(function()
-        selectedIndex = selectedIndex % #allBrainrots + 1
-        local selected = allBrainrots[selectedIndex]
-        dropdownBtn.Text = selected.fullName
-        callback(selected)
+        brainrotDropdownOpen = not brainrotDropdownOpen
+        dropdownMenu.Visible = brainrotDropdownOpen
+        
+        if brainrotDropdownOpen then
+            frame.Size = UDim2.new(1, -20, 0, 280)
+        else
+            frame.Size = UDim2.new(1, -20, 0, 80)
+        end
+    end)
+    
+    -- Close when clicking outside
+    UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local mousePos = UserInputService:GetMouseLocation()
+            local framePos = frame.AbsolutePosition
+            local frameSize = frame.AbsoluteSize
+            
+            if mousePos.X < framePos.X or mousePos.X > framePos.X + frameSize.X or
+               mousePos.Y < framePos.Y or mousePos.Y > framePos.Y + frameSize.Y then
+                brainrotDropdownOpen = false
+                dropdownMenu.Visible = false
+                frame.Size = UDim2.new(1, -20, 0, 80)
+            end
+        end
     end)
     
     return frame
@@ -1632,7 +1735,6 @@ createToggle(automationTab, "Auto Rebirth", "Automatically rebirths when possibl
     if enabled then task.spawn(autoRebirthLoop) end
 end)
 
--- FIXED: Auto Upgrade Base with SurfaceGui button
 createToggle(automationTab, "Auto Upgrade Base", "Clicks the base upgrade button", function(enabled)
     autoUpgradeBase = enabled
     if enabled then task.spawn(autoUpgradeBaseLoop) end
@@ -1648,6 +1750,20 @@ createToggle(automationTab, "Auto Upgrade Brainrot", "Automatically upgrades sel
     if enabled then
         if refreshBrainrotDropdown then refreshBrainrotDropdown() end
         task.spawn(autoUpgradeBrainrotLoop)
+    end
+end)
+
+-- NEW: Brainrot Collection Dropdown in Automation Tab too
+createRealBrainrotDropdown(automationTab, "Select Brainrot to Collect")
+
+createToggle(automationTab, "Auto Collect Selected Brainrot", "Tween to brainrot, avoid waves, return to base", function(enabled)
+    autoCollectSpecificBrainrot = enabled
+    if enabled then
+        if not selectedBrainrotToCollect then
+            warn("Please select a brainrot first!")
+            return
+        end
+        task.spawn(autoCollectSpecificBrainrotLoop)
     end
 end)
 
@@ -1718,39 +1834,20 @@ createToggle(combatTab, "Auto Hit", "Auto attacks enemies in range", function(en
 end)
 
 -- ==================== EVENT TAB ====================
--- NEW: Auto Collect Specific Brainrot System
-createBrainrotDropdown(eventTab, "Select Brainrot to Collect", function(selectedBrainrot)
-    selectedBrainrotToCollect = selectedBrainrot
-    print("Selected brainrot to collect:", selectedBrainrot.fullName)
-end)
+createRealBrainrotDropdown(eventTab, "Select Brainrot to Collect")
 
 createToggle(eventTab, "Auto Collect Selected Brainrot", "Tween to brainrot, avoid waves, return to base", function(enabled)
     autoCollectSpecificBrainrot = enabled
     if enabled then
         if not selectedBrainrotToCollect then
             warn("Please select a brainrot first!")
-            -- Turn off toggle
-            for _, child in ipairs(eventTab:GetChildren()) do
-                if child:IsA("Frame") and child:FindFirstChild("TextLabel") and child.TextLabel.Text == "Auto Collect Selected Brainrot" then
-                    -- Find the toggle frame and turn it off visually
-                    local toggle = child:FindFirstChild("Frame")
-                    if toggle then
-                        toggle.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-                        local knob = toggle:FindFirstChild("Frame")
-                        if knob then
-                            knob.Position = UDim2.new(0, 2, 0.5, -11)
-                        end
-                    end
-                end
-            end
-            autoCollectSpecificBrainrot = false
             return
         end
         task.spawn(autoCollectSpecificBrainrotLoop)
     end
 end)
 
-createToggle(eventTab, "Auto Collect Gold Bars", "Auto collects gold bars", function(enabled)
+createToggle(eventTab, "Auto Collect Gold Bars", "Teleports gold bars to you", function(enabled)
     autoCollectGoldBars = enabled
     if enabled then task.spawn(autoCollectGoldBarsLoop) end
 end)
