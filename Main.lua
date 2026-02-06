@@ -1,6 +1,6 @@
 --[[
     Nexus Main Hub - Fixed Version
-    Repo: https://github.com/NexusHuby/Nexus-Libary
+    Fixed: Drag button, black bar, strokes, Discord button, white outline
 ]]
 
 local Players = game:GetService("Players")
@@ -14,16 +14,16 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- Configuration
 local CONFIG = {
     TITLE = "NEXUS HUB",
+    DISCORD_LINK = "https://discord.gg/yourlink", -- Replace with your Discord
     COLORS = {
         Background = Color3.fromRGB(25, 25, 30),
         BackgroundTransparency = 0.08,
         Sidebar = Color3.fromRGB(35, 35, 40),
         Accent = Color3.fromRGB(88, 101, 242),
-        CyanStroke = Color3.fromRGB(100, 200, 255),
+        White = Color3.fromRGB(255, 255, 255), -- White outline
         Success = Color3.fromRGB(87, 242, 135),
         Warning = Color3.fromRGB(255, 200, 100),
         Danger = Color3.fromRGB(255, 100, 100),
-        White = Color3.fromRGB(255, 255, 255),
         Gray = Color3.fromRGB(180, 180, 180),
         DarkGray = Color3.fromRGB(100, 100, 100),
         Hover = Color3.fromRGB(55, 55, 65)
@@ -44,13 +44,12 @@ local LucideIcons = {
     minus = "−",
     menu = "☰",
     chevronRight = "❯",
-    search = "🔍",
     refresh = "↻",
     copy = "📋",
     externalLink = "↗",
     users = "👥",
-    logOut = "→",
-    sparkles = "✨"
+    sparkles = "✨",
+    message = "💬"
 }
 
 -- Create Main GUI
@@ -77,9 +76,9 @@ mainFrame.Active = true
 mainFrame.ClipsDescendants = true
 mainFrame.Parent = screenGui
 
--- Cyan Stroke
+-- WHITE Stroke (not cyan)
 local mainStroke = Instance.new("UIStroke")
-mainStroke.Color = CONFIG.COLORS.CyanStroke
+mainStroke.Color = CONFIG.COLORS.White
 mainStroke.Thickness = 1.2
 mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 mainStroke.Parent = mainFrame
@@ -177,7 +176,7 @@ titleLabel.TextSize = 20
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = topBar
 
--- Close Button (Transparency 1)
+-- Close Button
 local closeBtn = Instance.new("TextButton")
 closeBtn.Name = "CloseBtn"
 closeBtn.Size = UDim2.new(0, 32, 0, 32)
@@ -191,7 +190,6 @@ closeBtn.TextSize = 18
 closeBtn.AutoButtonColor = false
 closeBtn.Parent = topBar
 
--- Close button hover outline
 local closeOutline = Instance.new("UIStroke")
 closeOutline.Color = CONFIG.COLORS.Danger
 closeOutline.Thickness = 0
@@ -224,7 +222,7 @@ closeBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Minimize Button (Transparency 1)
+-- Minimize Button
 local minBtn = Instance.new("TextButton")
 minBtn.Name = "MinBtn"
 minBtn.Size = UDim2.new(0, 32, 0, 32)
@@ -246,7 +244,7 @@ minBtn.MouseLeave:Connect(function()
     TweenService:Create(minBtn, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.Gray}):Play()
 end)
 
--- Create Drag Button (Image Button)
+-- FIXED: Drag Button - Only drags when holding mouse button
 local function createDragButton()
     local btn = Instance.new("ImageButton")
     btn.Name = "DragToggleBtn"
@@ -274,7 +272,7 @@ local function createDragButton()
     btnCorner.Parent = btn
     
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = CONFIG.COLORS.CyanStroke
+    btnStroke.Color = CONFIG.COLORS.White -- White stroke
     btnStroke.Thickness = 2
     btnStroke.Parent = btn
     
@@ -302,27 +300,40 @@ local function createDragButton()
     icon.TextSize = 20
     icon.Parent = btn
     
-    -- Drag functionality for button
-    local btnDragging = false
-    local btnDragInput, btnDragStart, btnStartPos
-    local dragThreshold = 5
-    
-    local function updateBtnDrag(input)
-        local delta = input.Position - btnDragStart
-        btn.Position = UDim2.new(btnStartPos.X.Scale, btnStartPos.X.Offset + delta.X, btnStartPos.Y.Scale, btnStartPos.Y.Offset + delta.Y)
-    end
+    -- FIXED: Proper drag logic - only drag when holding mouse button
+    local isDragging = false
+    local dragStartPos = nil
+    local buttonStartPos = nil
     
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            btnDragging = false
-            btnDragStart = input.Position
-            btnStartPos = btn.Position
+            isDragging = false
+            dragStartPos = input.Position
+            buttonStartPos = btn.Position
             
-            local connection
-            connection = input.Changed:Connect(function()
+            -- Track mouse movement
+            local moveConnection
+            moveConnection = UserInputService.InputChanged:Connect(function(moveInput)
+                if moveInput.UserInputType == Enum.UserInputType.MouseMovement or moveInput.UserInputType == Enum.UserInputType.Touch then
+                    if (moveInput.Position - dragStartPos).Magnitude > 5 then
+                        isDragging = true
+                        local delta = moveInput.Position - dragStartPos
+                        btn.Position = UDim2.new(
+                            buttonStartPos.X.Scale, 
+                            buttonStartPos.X.Offset + delta.X, 
+                            buttonStartPos.Y.Scale, 
+                            buttonStartPos.Y.Offset + delta.Y
+                        )
+                    end
+                end
+            end)
+            
+            -- Release tracking
+            input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
-                    connection:Disconnect()
-                    if not btnDragging then
+                    moveConnection:Disconnect()
+                    if not isDragging then
+                        -- It was a click, toggle main frame
                         isMinimized = not isMinimized
                         if isMinimized then
                             mainFrame.Visible = false
@@ -334,29 +345,11 @@ local function createDragButton()
                             }):Play()
                         end
                     else
+                        -- Save position after drag
                         savedButtonPosition = btn.Position
                     end
                 end
             end)
-        end
-    end)
-    
-    btn.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            btnDragInput = input
-            
-            if btnDragStart then
-                local delta = (input.Position - btnDragStart).Magnitude
-                if delta > dragThreshold then
-                    btnDragging = true
-                end
-            end
-        end
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if input == btnDragInput and btnDragging then
-            updateBtnDrag(input)
         end
     end)
     
@@ -408,7 +401,7 @@ minBtn.MouseButton1Click:Connect(function()
     }):Play()
 end)
 
--- Sidebar
+-- FIXED: Sidebar - No black bar, proper corners
 local sidebar = Instance.new("Frame")
 sidebar.Name = "Sidebar"
 sidebar.Size = UDim2.new(0, 180, 1, -50)
@@ -418,11 +411,23 @@ sidebar.BackgroundTransparency = 0.3
 sidebar.BorderSizePixel = 0
 sidebar.Parent = mainFrame
 
+-- FIXED: Only round right corners of sidebar
 local sidebarCorner = Instance.new("UICorner")
-sidebarCorner.CornerRadius = UDim.new(0, 0)
+sidebarCorner.CornerRadius = UDim.new(0, 16)
 sidebarCorner.Parent = sidebar
 
--- User Profile Button (Clickable)
+-- Mask left corners to make them square (no black bar)
+local leftMask = Instance.new("Frame")
+leftMask.Name = "LeftMask"
+leftMask.Size = UDim2.new(0, 20, 1, 0)
+leftMask.Position = UDim2.new(0, 0, 0, 0)
+leftMask.BackgroundColor3 = CONFIG.COLORS.Sidebar
+leftMask.BackgroundTransparency = 0.3
+leftMask.BorderSizePixel = 0
+leftMask.ZIndex = 2
+leftMask.Parent = sidebar
+
+-- User Profile Button
 local profileButton = Instance.new("TextButton")
 profileButton.Name = "ProfileButton"
 profileButton.Size = UDim2.new(1, -20, 0, 80)
@@ -452,10 +457,10 @@ local avatarCorner = Instance.new("UICorner")
 avatarCorner.CornerRadius = UDim.new(1, 0)
 avatarCorner.Parent = avatarImage
 
--- Username
+-- Username (NO STROKE)
 local userLabel = Instance.new("TextLabel")
 userLabel.Size = UDim2.new(1, -85, 0, 25)
-userLabel.Position = UDim2.new(0, 75, 0, 15)
+userLabel.Position = UDim2.new(0, 75, 0, 10)
 userLabel.BackgroundTransparency = 1
 userLabel.Font = Enum.Font.GothamBold
 userLabel.Text = player.Name
@@ -465,10 +470,10 @@ userLabel.TextTruncate = Enum.TextTruncate.AtEnd
 userLabel.TextXAlignment = Enum.TextXAlignment.Left
 userLabel.Parent = profileButton
 
--- Status
+-- Status (NO STROKE)
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, -85, 0, 20)
-statusLabel.Position = UDim2.new(0, 75, 0, 42)
+statusLabel.Position = UDim2.new(0, 75, 0, 35)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Font = Enum.Font.GothamBold
 statusLabel.Text = LucideIcons.shield .. " PREMIUM"
@@ -476,6 +481,56 @@ statusLabel.TextColor3 = CONFIG.COLORS.Success
 statusLabel.TextSize = 11
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Parent = profileButton
+
+-- Discord Button - Cool styled button
+local discordBtn = Instance.new("TextButton")
+discordBtn.Name = "DiscordBtn"
+discordBtn.Size = UDim2.new(1, -85, 0, 22)
+discordBtn.Position = UDim2.new(0, 75, 0, 55)
+discordBtn.BackgroundColor3 = Color3.fromRGB(88, 101, 242) -- Discord purple
+discordBtn.BorderSizePixel = 0
+discordBtn.Font = Enum.Font.GothamBold
+discordBtn.Text = LucideIcons.message .. " Discord"
+discordBtn.TextColor3 = CONFIG.COLORS.White
+discordBtn.TextSize = 10
+discordBtn.AutoButtonColor = false
+discordBtn.Parent = profileButton
+
+local discordCorner = Instance.new("UICorner")
+discordCorner.CornerRadius = UDim.new(0, 6)
+discordCorner.Parent = discordBtn
+
+-- Discord button gradient
+local discordGradient = Instance.new("UIGradient")
+discordGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 115, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(88, 101, 242))
+})
+discordGradient.Rotation = 90
+discordGradient.Parent = discordBtn
+
+-- Discord button hover
+discordBtn.MouseEnter:Connect(function()
+    TweenService:Create(discordBtn, TweenInfo.new(0.2), {
+        BackgroundColor3 = Color3.fromRGB(120, 135, 255)
+    }):Play()
+end)
+
+discordBtn.MouseLeave:Connect(function()
+    TweenService:Create(discordBtn, TweenInfo.new(0.2), {
+        BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+    }):Play()
+end)
+
+discordBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(CONFIG.DISCORD_LINK)
+        discordBtn.Text = LucideIcons.check .. " Copied!"
+        task.delay(2, function()
+            discordBtn.Text = LucideIcons.message .. " Discord"
+        end)
+    end
+end)
 
 -- Profile hover effect
 profileButton.MouseEnter:Connect(function()
@@ -492,7 +547,7 @@ profileButton.MouseLeave:Connect(function()
     }):Play()
 end)
 
--- Tab Container (Vertical Layout)
+-- Tab Container
 local tabContainer = Instance.new("Frame")
 tabContainer.Name = "TabContainer"
 tabContainer.Size = UDim2.new(1, -20, 1, -110)
@@ -526,7 +581,7 @@ local function createTab(name, iconKey, layoutOrder)
     tabCorner.CornerRadius = UDim.new(0, 10)
     tabCorner.Parent = tabButton
     
-    -- Icon
+    -- Icon (NO STROKE)
     local iconLabel = Instance.new("TextLabel")
     iconLabel.Size = UDim2.new(0, 30, 1, 0)
     iconLabel.Position = UDim2.new(0, 12, 0, 0)
@@ -537,7 +592,7 @@ local function createTab(name, iconKey, layoutOrder)
     iconLabel.TextSize = 18
     iconLabel.Parent = tabButton
     
-    -- Text
+    -- Text (NO STROKE)
     local textLabel = Instance.new("TextLabel")
     textLabel.Size = UDim2.new(1, -52, 1, 0)
     textLabel.Position = UDim2.new(0, 45, 0, 0)
@@ -549,7 +604,7 @@ local function createTab(name, iconKey, layoutOrder)
     textLabel.TextXAlignment = Enum.TextXAlignment.Left
     textLabel.Parent = tabButton
     
-    -- Chevron
+    -- Chevron (NO STROKE)
     local chevron = Instance.new("TextLabel")
     chevron.Size = UDim2.new(0, 20, 1, 0)
     chevron.Position = UDim2.new(1, -25, 0, 0)
@@ -598,12 +653,10 @@ local function createTab(name, iconKey, layoutOrder)
     tabButton.MouseButton1Click:Connect(function()
         if currentTab == tabButton then return end
         
-        -- Hide all contents first
         for _, frame in pairs(contentFrames) do
             frame.Visible = false
         end
         
-        -- Deactivate previous
         if currentTab then
             local prevData = tabs[currentTab]
             TweenService:Create(currentTab, TweenInfo.new(0.2), {
@@ -615,7 +668,6 @@ local function createTab(name, iconKey, layoutOrder)
             TweenService:Create(prevData.chevron, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
         end
         
-        -- Activate new
         currentTab = tabButton
         TweenService:Create(tabButton, TweenInfo.new(0.2), {
             BackgroundColor3 = CONFIG.COLORS.Accent,
@@ -625,7 +677,6 @@ local function createTab(name, iconKey, layoutOrder)
         TweenService:Create(textLabel, TweenInfo.new(0.2), {TextColor3 = CONFIG.COLORS.White}):Play()
         TweenService:Create(chevron, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
         
-        -- Show content
         contentFrame.Visible = true
         contentFrame.CanvasPosition = Vector2.new(0, 0)
     end)
@@ -641,13 +692,13 @@ local function createTab(name, iconKey, layoutOrder)
     return contentFrame
 end
 
--- Create Tabs (No Dashboard)
+-- Create Tabs
 local featuresTab = createTab("Features", "zap", 1)
 local gameTab = createTab("Game", "gamepad", 2)
 local scriptsTab = createTab("Scripts", "code", 3)
 local settingsTab = createTab("Settings", "settings", 4)
 
--- SERVER TAB (Replaces Dashboard - opens when clicking profile)
+-- SERVER TAB (opens when clicking profile)
 local serverFrame = Instance.new("ScrollingFrame")
 serverFrame.Name = "ServerContent"
 serverFrame.Size = UDim2.new(1, -200, 1, -70)
@@ -685,7 +736,7 @@ local serverInfoCorner = Instance.new("UICorner")
 serverInfoCorner.CornerRadius = UDim.new(0, 12)
 serverInfoCorner.Parent = serverInfoCard
 
--- Job ID Display
+-- Job ID Display (NO STROKE)
 local jobIdLabel = Instance.new("TextLabel")
 jobIdLabel.Size = UDim2.new(1, -30, 0, 25)
 jobIdLabel.Position = UDim2.new(0, 15, 0, 15)
