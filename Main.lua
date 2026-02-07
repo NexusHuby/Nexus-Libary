@@ -1,6 +1,15 @@
 --[[
-    Nexus|Escape Tsunami for Brainrots - Complete Edition Fixed v7
-    Fixes: Brainrot collection, Wave protection with VIP walls, Base Upgrade, Auto Clicker, ESP Skeleton, Spawn Machines
+    Nexus|Escape Tsunami for Brainrots - Modified Edition
+    Changes:
+    - Longer proximity prompt hold for brainrot collection
+    - Stay in VIP walls longer during waves (don't instantly die)
+    - Removed: Auto Spawn Machine toggle
+    - Fixed ESP toggle functionality
+    - Removed: Auto Upgrade Selected Brainrot toggle and dropdown
+    - Removed: Auto Upgrade Brainrot toggle
+    - Removed: Auto Upgrade Base toggle
+    - Modified Auto Collect Cash: Tween to base first, spawn collect parts, reset every 5s
+    - Added: Copy Discord Link button in Settings
 ]]
 
 local Players = game:GetService("Players")
@@ -64,8 +73,6 @@ local SellToolFunction = getRemote(RemoteFunctions, "SellTool")
 local UpgradeBrainrotFunction = getRemote(RemoteFunctions, "UpgradeBrainrot")
 local RebirthFunction = getRemote(RemoteFunctions, "Rebirth")
 local UpdateCollectedBrainrots = getRemote(RemoteEvents, "UpdateCollectedBrainrots")
--- FIXED: Base Upgrade Remote
-local UpgradeBaseFunction = getRemote(RemoteFunctions, "UpgradeBase")
 
 -- Configuration
 local CONFIG = {
@@ -95,10 +102,7 @@ local autoUpgradeSpeed = false
 local selectedSpeedAmount = 1
 local autoUpgradeCarry = false
 local autoSellInventory = false
-local autoUpgradeBrainrot = false
-local selectedBrainrotSlot = nil
 local autoRebirth = false
-local autoUpgradeBase = false
 
 -- Combat Tab Variables
 local hitboxExtenderEnabled = false
@@ -122,32 +126,19 @@ local isCollectingBrainrot = false
 local positionBeforeCollecting = nil
 local brainrotDropdownOpen = false
 
--- NEW: Wave Protection Variables (using VIP walls instead of gaps)
+-- Wave Protection Variables (using VIP walls instead of gaps)
 local waveProtectionEnabled = false
 local waveProtectionRange = 125 -- Between 100-150 as requested
 local isHidingFromWave = false
 local waveHidePosition = nil
-
--- Auto Upgrade Selected Brainrot Variables
-local autoUpgradeSelectedBrainrot = false
-local selectedBrainrotToUpgrade = nil
-local selectedBrainrotToUpgradeSlot = nil
-local brainrotUpgradeDropdownOpen = false
+local waveHideStartTime = nil -- NEW: Track how long we've been hiding
+local MIN_WAVE_HIDE_TIME = 3 -- NEW: Minimum seconds to stay in VIP wall
 
 -- FIXED: Auto Clicker Variables - Draggable auto-clicking button
 local autoClickerEnabled = false
 local autoClickerCPS = 10
 local autoClickerButton = nil
 local autoClickerLoop = nil
-
--- FIXED: Auto Spawn Machine Variables
-local autoSpawnMachine = false
-local spawnMachineTypes = {
-    "Spawn Machine",
-    "Fuse Machine", 
-    "Blackhole Spawn Machine",
-    "ATM Spawn Machine"
-}
 
 -- Stages Tab Variables
 local selectedStage = nil
@@ -233,29 +224,6 @@ local function getPlayerBase()
     end
     
     return closestBase
-end
-
--- Get All Brainrot Names from Base
-local function getBrainrotNames()
-    local brainrots = {}
-    local base = getPlayerBase()
-    if not base then return brainrots end
-    
-    local slots = base:FindFirstChild("Slots")
-    if not slots then return brainrots end
-    
-    for i = 1, 40 do
-        local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
-        if slot then
-            for _, child in ipairs(slot:GetChildren()) do
-                if child:IsA("Model") and child.Name ~= "RootPart" and child.Name ~= "Collect" then
-                    table.insert(brainrots, {name = child.Name, slot = i})
-                    break
-                end
-            end
-        end
-    end
-    return brainrots
 end
 
 -- Get all brainrots from ReplicatedStorage for dropdown
@@ -437,7 +405,7 @@ local function getVIPWallsInOrder(targetRarity)
     return walls
 end
 
--- NEW: Get nearest VIP wall for wave protection
+-- Get nearest VIP wall for wave protection
 local function getNearestVIPWall()
     local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
     if not defaultMap then return nil end
@@ -596,20 +564,28 @@ local function autoTweenToStageLoop()
     print("Auto Tween to Stage stopped")
 end
 
--- NEW: Wave Protection Loop - Uses VIP walls instead of gaps
+-- MODIFIED: Wave Protection Loop - Stays in VIP walls longer
 local function waveProtectionLoop()
     print("Wave Protection (VIP Walls) started")
     isHidingFromWave = false
     waveHidePosition = nil
+    waveHideStartTime = nil
     
     while waveProtectionEnabled do
         local success, err = pcall(function()
             -- Check for active tsunamis/waves
             local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
             if not activeTsunamis then
-                -- No waves, return to normal if we were hiding
+                -- No waves, check if we should return
                 if isHidingFromWave and waveHidePosition then
-                    task.wait(1) -- Wait a bit to make sure wave is gone
+                    -- NEW: Check if minimum hide time has passed
+                    local hideTime = tick() - (waveHideStartTime or tick())
+                    if hideTime < MIN_WAVE_HIDE_TIME then
+                        -- Stay in wall for minimum time
+                        return
+                    end
+                    
+                    task.wait(1) -- Extra safety wait
                     
                     -- Return to previous position
                     local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
@@ -618,7 +594,8 @@ local function waveProtectionLoop()
                     
                     isHidingFromWave = false
                     waveHidePosition = nil
-                    print("Returned from VIP wall - wave gone")
+                    waveHideStartTime = nil
+                    print("Returned from VIP wall - wave gone after", hideTime, "seconds")
                 end
                 return
             end
@@ -652,6 +629,7 @@ local function waveProtectionLoop()
                     -- Store position before hiding (unless we're collecting brainrots, safety first)
                     if not isHidingFromWave then
                         waveHidePosition = humanoidRootPart.CFrame
+                        waveHideStartTime = tick() -- NEW: Start tracking hide time
                     end
                     
                     -- Cancel brainrot collection if active - SAFETY FIRST
@@ -684,15 +662,19 @@ local function waveProtectionLoop()
                     end
                 end
             elseif nearestWave and nearestDist > 150 and isHidingFromWave then
-                -- Wave is far away now, return to position
-                if waveHidePosition then
-                    local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
-                    returnTween:Play()
-                    returnTween.Completed:Wait()
-                    
-                    isHidingFromWave = false
-                    waveHidePosition = nil
-                    print("Returned from VIP wall - wave far away")
+                -- Wave is far away now, check minimum hide time before returning
+                local hideTime = tick() - (waveHideStartTime or tick())
+                if hideTime >= MIN_WAVE_HIDE_TIME then
+                    if waveHidePosition then
+                        local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
+                        returnTween:Play()
+                        returnTween.Completed:Wait()
+                        
+                        isHidingFromWave = false
+                        waveHidePosition = nil
+                        waveHideStartTime = nil
+                        print("Returned from VIP wall - wave far away after", hideTime, "seconds")
+                    end
                 end
             end
         end)
@@ -712,25 +694,26 @@ local function waveProtectionLoop()
     
     isHidingFromWave = false
     waveHidePosition = nil
+    waveHideStartTime = nil
     print("Wave Protection stopped")
 end
 
--- FIXED: Quick proximity prompt activation (no long hold)
+-- MODIFIED: Longer proximity prompt activation (hold longer)
 local function activateProximityPrompt(prompt)
     if not prompt then return false end
     if not prompt:IsA("ProximityPrompt") then return false end
     
-    print("Activating proximity prompt instantly")
+    print("Activating proximity prompt with extended hold...")
     
-    -- Just fire it immediately without holding
+    -- MODIFIED: Hold for 1.5 seconds instead of instant
     prompt:InputHoldBegin()
-    task.wait(0.1)
+    task.wait(1.5) -- Increased from 0.1 to 1.5 seconds
     prompt:InputHoldEnd()
     
     return true
 end
 
--- FIXED: Auto Collect Specific Brainrot Loop - NO DELAY, instant collection
+-- MODIFIED: Auto Collect Specific Brainrot Loop - Longer proximity hold
 local function autoCollectSpecificBrainrotLoop()
     print("Auto Collect Specific Brainrot started for:", selectedBrainrotToCollect and selectedBrainrotToCollect.name or "None")
     
@@ -760,9 +743,9 @@ local function autoCollectSpecificBrainrotLoop()
                 
                 task.wait(0.3) -- Small wait to arrive
                 
-                -- FIXED: Quick activation, no 3-second hold
+                -- MODIFIED: Longer activation hold
                 if foundBrainrot.prompt then
-                    print("Activating proximity prompt instantly...")
+                    print("Activating proximity prompt with extended hold...")
                     activateProximityPrompt(foundBrainrot.prompt)
                 else
                     -- Fallback to touch interest
@@ -771,12 +754,8 @@ local function autoCollectSpecificBrainrotLoop()
                     firetouchinterest(humanoidRootPart, foundBrainrot.part, 1)
                 end
                 
-                -- Also try to fire the remote event if available
-                if UpdateCollectedBrainrots then
-                    UpdateCollectedBrainrots:FireServer(foundBrainrot.model)
-                end
-                
-                task.wait(0.5) -- Brief wait for collection to process
+                -- Wait a bit longer for collection to process
+                task.wait(1.0) -- Increased from 0.5 to 1.0
                 
                 -- Return to base
                 local base = getPlayerBase()
@@ -855,48 +834,7 @@ local function autoHitLoop()
     end
 end
 
--- FIXED: Auto Upgrade Base - Uses correct path and remote
-local function autoUpgradeBaseLoop()
-    print("Auto Upgrade Base started")
-    
-    while autoUpgradeBase do
-        local success, err = pcall(function()
-            -- Method 1: Try to use the RemoteFunction directly
-            if UpgradeBaseFunction then
-                print("Firing UpgradeBase remote...")
-                UpgradeBaseFunction:InvokeServer()
-            end
-            
-            -- Method 2: Try to find and click the button in our base
-            local base = getPlayerBase()
-            if base then
-                local upgradeBaseModel = base:FindFirstChild("UpgradeBase")
-                if upgradeBaseModel then
-                    local sign = upgradeBaseModel:FindFirstChild("Sign")
-                    if sign then
-                        local surfaceGui = sign:FindFirstChild("SurfaceGui")
-                        if surfaceGui then
-                            local button = surfaceGui:FindFirstChild("Button")
-                            if button and (button:IsA("ImageButton") or button:IsA("TextButton")) then
-                                print("Clicking base upgrade button...")
-                                button.MouseButton1Click:Fire()
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-        
-        if not success then
-            warn("Auto upgrade base error:", err)
-        end
-        
-        task.wait(2)
-    end
-    
-    print("Auto Upgrade Base stopped")
-end
-
+-- MODIFIED: Auto Collect Cash Loop - Tween to base first, spawn parts, reset every 5s
 local function autoCollectCashLoop()
     local resetTimer = 0
     
@@ -904,25 +842,32 @@ local function autoCollectCashLoop()
         local success, err = pcall(function()
             local base = getPlayerBase()
             if base then
+                -- MODIFIED: First tween to base
+                local basePart = base:FindFirstChildWhichIsA("BasePart", true)
+                if basePart then
+                    -- Tween to base position
+                    local targetCFrame = basePart.CFrame + Vector3.new(0, 5, 0)
+                    local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = targetCFrame})
+                    tween:Play()
+                    tween.Completed:Wait()
+                    task.wait(0.2) -- Small wait after arriving
+                end
+                
                 local slots = base:FindFirstChild("Slots")
                 if slots then
-                    if humanoidRootPart and not autoCollectCashTweened then
-                        autoCollectCashTweened = true
-                        local upPosition = humanoidRootPart.Position + Vector3.new(0, 3, 0)
-                        TweenService:Create(humanoidRootPart, TweenInfo.new(0.3), {CFrame = CFrame.new(upPosition)}):Play()
-                    end
-                    
+                    -- MODIFIED: Spawn collect parts at player position
                     for i = 1, 40 do
                         if not autoCollectCash then break end
                         local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
                         if slot then
                             local collectPart = slot:FindFirstChild("Collect")
                             if collectPart and collectPart:IsA("BasePart") then
+                                -- Move collect part to player instead of moving player to part
                                 collectPart.CFrame = humanoidRootPart.CFrame * CFrame.new(0, -3, 0)
                                 if CollectMoneyEvent then
                                     CollectMoneyEvent:FireServer()
                                 end
-                                task.wait(0.1)
+                                task.wait(0.05) -- Faster collection
                             end
                         end
                     end
@@ -1040,136 +985,6 @@ local function autoSpinWheelLoop()
     print("Auto Spin Wheel stopped")
 end
 
--- FIXED: Auto Spawn Machine - Detects different machine types and interacts properly
-local function autoSpawnMachineLoop()
-    print("Auto Spawn Machine started")
-    
-    while autoSpawnMachine do
-        local success, err = pcall(function()
-            -- Look for spawn machines with multiple detection methods
-            local spawnMachines = {}
-            
-            -- Method 1: Direct workspace descendants by name patterns
-            for _, obj in ipairs(Workspace:GetDescendants()) do
-                if obj:IsA("Model") then
-                    local name = obj.Name:lower()
-                    -- Check for all machine types
-                    if (name:find("spawn") and (name:find("machine") or name:find("insert"))) or
-                       name:find("fuse") or
-                       name:find("blackhole") or
-                       name:find("atm") then
-                        table.insert(spawnMachines, obj)
-                    end
-                end
-            end
-            
-            -- Method 2: CollectionService tags
-            local machineTags = {"SpawnMachine", "Spawn", "InsertMachine", "BrainrotMachine", "FuseMachine", "BlackholeMachine", "ATMMachine"}
-            for _, tag in ipairs(machineTags) do
-                for _, obj in ipairs(CollectionService:GetTagged(tag)) do
-                    if obj:IsDescendantOf(Workspace) then
-                        table.insert(spawnMachines, obj)
-                    end
-                end
-            end
-            
-            -- Remove duplicates
-            local uniqueMachines = {}
-            local seen = {}
-            for _, machine in ipairs(spawnMachines) do
-                if not seen[machine] then
-                    seen[machine] = true
-                    table.insert(uniqueMachines, machine)
-                end
-            end
-            
-            for _, machine in ipairs(uniqueMachines) do
-                if not autoSpawnMachine then break end
-                
-                -- Get machine position
-                local machinePos = nil
-                local machineCFrame = nil
-                if machine:IsA("Model") then
-                    if machine.PrimaryPart then
-                        machinePos = machine.PrimaryPart.Position
-                        machineCFrame = machine.PrimaryPart.CFrame
-                    else
-                        local part = machine:FindFirstChildWhichIsA("BasePart")
-                        if part then
-                            machinePos = part.Position
-                            machineCFrame = part.CFrame
-                        end
-                    end
-                elseif machine:IsA("BasePart") then
-                    machinePos = machine.Position
-                    machineCFrame = machine.CFrame
-                end
-                
-                if machinePos and machineCFrame then
-                    local distance = (humanoidRootPart.Position - machinePos).Magnitude
-                    
-                    -- If close enough, interact with all prompts
-                    if distance < 25 then
-                        print("Near machine:", machine.Name, "Distance:", distance)
-                        
-                        -- Tween closer if needed (5 studs in front)
-                        if distance > 8 then
-                            local targetCFrame = machineCFrame * CFrame.new(0, 0, -5)
-                            local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = targetCFrame})
-                            tween:Play()
-                            tween.Completed:Wait()
-                            task.wait(0.3)
-                        end
-                        
-                        -- Look for and activate proximity prompts
-                        for _, prompt in ipairs(machine:GetDescendants()) do
-                            if prompt:IsA("ProximityPrompt") then
-                                local actionText = prompt.ActionText:lower()
-                                if actionText:find("insert") or actionText:find("spawn") or actionText:find("use") or actionText:find("fuse") or prompt.Enabled then
-                                    print("Activating prompt:", prompt.ActionText)
-                                    
-                                    -- Move to activation distance if needed
-                                    local currentDist = (humanoidRootPart.Position - prompt.Parent.Position).Magnitude
-                                    if currentDist > prompt.MaxActivationDistance then
-                                        local direction = (humanoidRootPart.Position - prompt.Parent.Position).Unit
-                                        local targetPos = prompt.Parent.Position + direction * (prompt.MaxActivationDistance - 1)
-                                        humanoidRootPart.CFrame = CFrame.new(targetPos)
-                                        task.wait(0.2)
-                                    end
-                                    
-                                    -- Activate the prompt
-                                    prompt:InputHoldBegin()
-                                    task.wait(2) -- Hold for 2 seconds as requested
-                                    prompt:InputHoldEnd()
-                                    
-                                    task.wait(0.5)
-                                end
-                            end
-                        end
-                        
-                        -- Also try click detectors
-                        for _, clicker in ipairs(machine:GetDescendants()) do
-                            if clicker:IsA("ClickDetector") then
-                                print("Clicking machine detector")
-                                fireclickdetector(clicker)
-                                task.wait(0.5)
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-        
-        if not success then
-            warn("Auto spawn machine error:", err)
-        end
-        
-        task.wait(1)
-    end
-    
-    print("Auto Spawn Machine stopped")
-end
-
 local function autoUpgradeSpeedLoop()
     while autoUpgradeSpeed do
         if UpgradeSpeedFunction then
@@ -1210,118 +1025,6 @@ local function autoSellInventoryLoop()
                 SellAllFunction:InvokeServer()
             end)
         end
-        task.wait(1)
-    end
-end
-
-local function autoUpgradeBrainrotLoop()
-    while autoUpgradeBrainrot do
-        if UpgradeBrainrotFunction and selectedBrainrotSlot then
-            pcall(function()
-                UpgradeBrainrotFunction:InvokeServer(selectedBrainrotSlot)
-            end)
-        end
-        task.wait(0.5)
-    end
-end
-
--- Auto Upgrade Selected Brainrot Loop
-local function autoUpgradeSelectedBrainrotLoop()
-    print("Auto Upgrade Selected Brainrot started")
-    
-    local base = getPlayerBase()
-    if not base then
-        warn("No base found!")
-        autoUpgradeSelectedBrainrot = false
-        return
-    end
-    
-    local slots = base:FindFirstChild("Slots")
-    if not slots then
-        warn("No slots folder found in base!")
-        autoUpgradeSelectedBrainrot = false
-        return
-    end
-    
-    -- Find brainrot in slots
-    local foundSlot = nil
-    local foundName = nil
-    
-    for i = 1, 40 do
-        local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
-        if slot then
-            for _, child in ipairs(slot:GetChildren()) do
-                if child:IsA("Model") and child.Name ~= "RootPart" and child.Name ~= "Collect" then
-                    foundSlot = i
-                    foundName = child.Name
-                    print(string.format("Found brainrot: %s in Slot %d", foundName, foundSlot))
-                    break
-                end
-            end
-            if foundSlot then break end
-        end
-    end
-    
-    if not foundSlot then
-        warn("No brainrot found in base slots!")
-        autoUpgradeSelectedBrainrot = false
-        return
-    end
-    
-    selectedBrainrotToUpgrade = {name = foundName, slot = foundSlot}
-    selectedBrainrotToUpgradeSlot = foundSlot
-    
-    print(string.format("Starting auto upgrade for %s (Slot %d)", foundName, foundSlot))
-    
-    while autoUpgradeSelectedBrainrot do
-        local success, err = pcall(function()
-            if UpgradeBrainrotFunction and selectedBrainrotToUpgradeSlot then
-                print(string.format("Upgrading %s in Slot %d...", foundName, selectedBrainrotToUpgradeSlot))
-                UpgradeBrainrotFunction:InvokeServer(selectedBrainrotToUpgradeSlot)
-            end
-        end)
-        
-        if not success then
-            warn("Auto upgrade error:", err)
-        end
-        
-        task.wait(1)
-    end
-    
-    print("Auto Upgrade Selected Brainrot stopped")
-end
-
-local function autoCompleteObbyLoop()
-    while autoCompleteObby do
-        local success, err = pcall(function()
-            local moneyMap = Workspace:FindFirstChild("MoneyMap_SharedInstances")
-            if not moneyMap then return end
-            
-            for obbyNum = 1, 3 do
-                if not autoCompleteObby then break end
-                local startPart = moneyMap:FindFirstChild("MoneyObbyStart" .. obbyNum)
-                local endPart = moneyMap:FindFirstChild("MoneyObby" .. obbyNum .. "End")
-                local safetyPart = moneyMap:FindFirstChild("MoneyObbySaftey" .. obbyNum)
-                
-                if startPart and endPart then
-                    if startPart:IsA("BasePart") then
-                        humanoidRootPart.CFrame = startPart.CFrame
-                        task.wait(0.2)
-                    end
-                    if endPart:IsA("BasePart") then
-                        local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.8), {CFrame = endPart.CFrame})
-                        tween:Play()
-                        tween.Completed:Wait()
-                        if safetyPart and safetyPart:IsA("BasePart") then
-                            firetouchinterest(humanoidRootPart, safetyPart, 0)
-                            task.wait(0.1)
-                            firetouchinterest(humanoidRootPart, safetyPart, 1)
-                        end
-                        task.wait(0.3)
-                    end
-                end
-            end
-        end)
         task.wait(1)
     end
 end
@@ -1523,7 +1226,7 @@ local function visibleHitboxLoop()
     end)
 end
 
--- NEW: Skeleton ESP with Distance
+-- FIXED: Skeleton ESP with Distance - Better cleanup and state management
 local function createSkeletonESP(targetPlayer)
     if targetPlayer == player then return end
     if skeletonESPObjects[targetPlayer] then return end
@@ -1534,6 +1237,7 @@ local function createSkeletonESP(targetPlayer)
     
     local lines = {}
     local distanceLabel = nil
+    local renderConnection = nil
     
     local function onCharacterAdded(char)
         task.wait(1)
@@ -1669,7 +1373,7 @@ local function removeSkeletonESP(targetPlayer)
     end
 end
 
--- Regular ESP (boxes, names, health)
+-- FIXED: Regular ESP (boxes, names, health) - Better cleanup
 local function createESP(targetPlayer)
     if targetPlayer == player then return end
     if espObjects[targetPlayer] then return end
@@ -1744,9 +1448,16 @@ local function createESP(targetPlayer)
         tracer.Size = UDim2.new(0, 2, 0, 2)
         tracer.Parent = espFolder
         
-        RunService.RenderStepped:Connect(function()
-            if not espEnabled or not tracer.Parent then return end
-            if not targetPlayer.Character or not hrp.Parent then return end
+        -- Store connection for cleanup
+        local connection = RunService.RenderStepped:Connect(function()
+            if not espEnabled or not tracer.Parent then 
+                connection:Disconnect()
+                return 
+            end
+            if not targetPlayer.Character or not hrp.Parent then 
+                tracer.Visible = false
+                return 
+            end
             
             local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
             if onScreen then
@@ -1779,29 +1490,46 @@ local function removeESP(targetPlayer)
     end
 end
 
+-- FIXED: ESP Loop with proper state management
 local function espLoop()
+    -- Clear existing ESP first
+    for p, _ in pairs(espObjects) do
+        removeESP(p)
+    end
+    for p, _ in pairs(skeletonESPObjects) do
+        removeSkeletonESP(p)
+    end
+    
+    -- Create ESP for all current players
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= player then
             createESP(p)
-            createSkeletonESP(p) -- Also create skeleton ESP
+            createSkeletonESP(p)
         end
     end
     
-    Players.PlayerAdded:Connect(function(p)
+    -- Handle new players
+    local playerAddedConnection = Players.PlayerAdded:Connect(function(p)
         if espEnabled then
             createESP(p)
             createSkeletonESP(p)
         end
     end)
     
-    Players.PlayerRemoving:Connect(function(p)
+    -- Handle players leaving
+    local playerRemovingConnection = Players.PlayerRemoving:Connect(function(p)
         removeESP(p)
         removeSkeletonESP(p)
     end)
     
+    -- Keep loop running while enabled
     while espEnabled do
         task.wait(1)
     end
+    
+    -- Cleanup when disabled
+    playerAddedConnection:Disconnect()
+    playerRemovingConnection:Disconnect()
     
     for p, _ in pairs(espObjects) do
         removeESP(p)
@@ -1872,10 +1600,8 @@ closeBtn.MouseButton1Click:Connect(function()
     hitboxExtenderEnabled = false
     waveProtectionEnabled = false
     autoCollectSpecificBrainrot = false
-    autoUpgradeSelectedBrainrot = false
     autoClickerEnabled = false
     autoSpinWheel = false
-    autoSpawnMachine = false
     autoTweenToStage = false
     espEnabled = false
     
@@ -2461,85 +2187,6 @@ local function createWorkingDropdown(parent, name, callback)
     return frame
 end
 
-local function createDropdown(parent, name, getOptionsFunc, callback)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, -20, 0, 80)
-    frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
-    frame.BackgroundTransparency = 0.3
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
-    corner.Parent = frame
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -30, 0, 25)
-    title.Position = UDim2.new(0, 15, 0, 10)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamBold
-    title.Text = name
-    title.TextColor3 = CONFIG.COLORS.White
-    title.TextSize = 14
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
-    
-    local dropdownBtn = Instance.new("TextButton")
-    dropdownBtn.Size = UDim2.new(1, -30, 0, 30)
-    dropdownBtn.Position = UDim2.new(0, 15, 0, 40)
-    dropdownBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-    dropdownBtn.BorderSizePixel = 0
-    dropdownBtn.Font = Enum.Font.Gotham
-    dropdownBtn.Text = "Select..."
-    dropdownBtn.TextColor3 = CONFIG.COLORS.Gray
-    dropdownBtn.TextSize = 12
-    dropdownBtn.Parent = frame
-    
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 8)
-    btnCorner.Parent = dropdownBtn
-    
-    local selectedIndex = 1
-    local currentOptions = {}
-    local currentData = {}
-    
-    local function refreshOptions()
-        local optionsData = getOptionsFunc()
-        currentOptions = {}
-        currentData = optionsData
-        
-        if #optionsData > 0 then
-            for _, data in ipairs(optionsData) do
-                table.insert(currentOptions, data.name .. " (Slot " .. data.slot .. ")")
-            end
-            selectedIndex = 1
-            dropdownBtn.Text = currentOptions[1]
-        else
-            currentOptions = {"No brainrots found - Click to refresh"}
-            selectedIndex = 1
-            dropdownBtn.Text = currentOptions[1]
-        end
-    end
-    
-    refreshOptions()
-    
-    dropdownBtn.MouseButton1Click:Connect(function()
-        if #currentOptions == 1 and string.find(currentOptions[1]:lower(), "no brainrots") then
-            refreshOptions()
-            return
-        end
-        
-        selectedIndex = selectedIndex % #currentOptions + 1
-        dropdownBtn.Text = currentOptions[selectedIndex]
-        
-        if currentData[selectedIndex] then
-            callback(currentData[selectedIndex], selectedIndex)
-        end
-    end)
-    
-    return frame, refreshOptions
-end
-
 local function createStageDropdown(parent, name, callback)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, -20, 0, 80)
@@ -2784,15 +2431,14 @@ local function createButton(parent, name, callback)
 end
 
 -- ==================== AUTOMATION TAB ====================
-createToggle(automationTab, "Auto Collect Cash", "Resets char every 5 sec + collects cash", function(enabled)
+-- MODIFIED: Auto Collect Cash now tweens to base first
+createToggle(automationTab, "Auto Collect Cash", "Tween to base, spawn collect parts, reset every 5s", function(enabled)
     autoCollectCash = enabled
     if enabled then task.spawn(autoCollectCashLoop) end
 end)
 
-createDropdown(automationTab, "Auto Upgrade Speed", function() 
-    return {{name = "+1 Speed", slot = 1}, {name = "+5 Speed", slot = 5}, {name = "+10 Speed", slot = 10}}
-end, function(selection, index)
-    selectedSpeedAmount = selection.slot
+createSlider(automationTab, "Auto Upgrade Speed", "Select speed upgrade amount", 1, 10, 1, function(value)
+    selectedSpeedAmount = value
 end)
 
 createToggle(automationTab, "Auto Upgrade Speed", "Automatically upgrades speed", function(enabled)
@@ -2810,31 +2456,18 @@ createToggle(automationTab, "Auto Rebirth", "Automatically rebirths when possibl
     if enabled then task.spawn(autoRebirthLoop) end
 end)
 
--- FIXED: Auto Upgrade Base now uses correct remote
-createToggle(automationTab, "Auto Upgrade Base", "Uses RemoteFunction to upgrade base", function(enabled)
-    autoUpgradeBase = enabled
-    if enabled then task.spawn(autoUpgradeBaseLoop) end
-end)
+-- REMOVED: Auto Upgrade Base toggle (deleted as requested)
 
-local brainrotDropdown, refreshBrainrotDropdown = createDropdown(automationTab, "Select Brainrot to Upgrade", getBrainrotNames, function(data, index)
-    selectedBrainrotSlot = data.slot
-    print("Selected brainrot slot:", selectedBrainrotSlot)
-end)
+-- REMOVED: Auto Upgrade Brainrot dropdown and toggle (deleted as requested)
 
-createToggle(automationTab, "Auto Upgrade Brainrot", "Automatically upgrades selected brainrot", function(enabled)
-    autoUpgradeBrainrot = enabled
-    if enabled then
-        if refreshBrainrotDropdown then refreshBrainrotDropdown() end
-        task.spawn(autoUpgradeBrainrotLoop)
-    end
-end)
+-- REMOVED: Auto Upgrade Selected Brainrot dropdown and toggle (deleted as requested)
 
 createWorkingDropdown(automationTab, "Select Brainrot to Collect", function(brainrotInfo)
     selectedBrainrotToCollect = brainrotInfo
 end)
 
--- FIXED: Instant collection without 3-second wait
-createToggle(automationTab, "Auto Collect Selected Brainrot", "Instant collect, no delay", function(enabled)
+-- MODIFIED: Longer proximity prompt hold for brainrot collection
+createToggle(automationTab, "Auto Collect Selected Brainrot", "Collects selected brainrot (1.5s hold)", function(enabled)
     autoCollectSpecificBrainrot = enabled
     if enabled then
         if not selectedBrainrotToCollect then
@@ -2845,14 +2478,9 @@ createToggle(automationTab, "Auto Collect Selected Brainrot", "Instant collect, 
     end
 end)
 
-createToggle(automationTab, "Auto Upgrade Selected Brainrot", "Scans base, displays name & slot, auto upgrades", function(enabled)
-    autoUpgradeSelectedBrainrot = enabled
-    if enabled then
-        task.spawn(autoUpgradeSelectedBrainrotLoop)
-    end
-end)
+-- REMOVED: Auto Spawn Machine toggle (deleted as requested)
 
--- FIXED: Auto Clicker with draggable button that auto-clicks
+-- FIXED: Auto Clicker with draggable button that auto-clicks continuously
 createToggle(automationTab, "Auto Clicker", "Draggable button that auto-clicks continuously", function(enabled)
     autoClickerEnabled = enabled
     if enabled then
@@ -2875,12 +2503,6 @@ createSlider(automationTab, "Clicker CPS", "Clicks per second", 1, 50, 10, funct
         end
     end
     print("Clicker CPS set to:", value)
-end)
-
--- FIXED: Auto Spawn Machine with better detection
-createToggle(automationTab, "Auto Spawn Machine", "Detects all machine types, tweens and inserts", function(enabled)
-    autoSpawnMachine = enabled
-    if enabled then task.spawn(autoSpawnMachineLoop) end
 end)
 
 -- ==================== COMBAT TAB ====================
@@ -2933,12 +2555,13 @@ createToggle(combatTab, "Show Range Visual", "Shows sphere around you", function
     end
 end)
 
--- NEW: Player ESP with Skeleton and Distance
+-- FIXED: Player ESP with Skeleton and Distance - Better toggle handling
 createToggle(combatTab, "Player ESP + Skeleton", "Shows skeleton, distance, boxes, names, health", function(enabled)
     espEnabled = enabled
     if enabled then
         task.spawn(espLoop)
     else
+        -- Ensure cleanup when disabled
         for p, _ in pairs(espObjects) do
             removeESP(p)
         end
@@ -3025,8 +2648,8 @@ createButton(sellTab, "Sell Holding Brainrots", function()
 end)
 
 -- ==================== SETTINGS TAB ====================
--- NEW: Wave Protection using VIP walls
-createToggle(settingsTab, "Wave Protection (VIP Walls)", "When wave is 100-150 studs, goes to nearest VIP wall. Safety priority!", function(enabled)
+-- MODIFIED: Wave Protection with longer stay time
+createToggle(settingsTab, "Wave Protection (VIP Walls)", "Stays in VIP walls longer during waves (3s min)", function(enabled)
     waveProtectionEnabled = enabled
     if enabled then
         task.spawn(waveProtectionLoop)
@@ -3036,6 +2659,19 @@ end)
 createSlider(settingsTab, "Wave Detection Range", "How far to detect waves (100-150 recommended)", 50, 200, 125, function(value)
     waveProtectionRange = value
     print("Wave detection range:", value)
+end)
+
+-- NEW: Copy Discord Link button
+createButton(settingsTab, "📋 Copy Discord Link", function()
+    local discordLink = "https://discord.gg/nexus" -- Change this to your actual Discord link
+    if setclipboard then
+        setclipboard(discordLink)
+        print("Discord link copied to clipboard!")
+    else
+        warn("Clipboard function not available")
+        -- Fallback: print to console
+        print("Discord Link:", discordLink)
+    end
 end)
 
 -- Select Automation tab by default
@@ -3053,5 +2689,5 @@ player.CharacterAdded:Connect(function(newChar)
     humanoid = character:WaitForChild("Humanoid")
 end)
 
-print("Nexus|Escape Tsunami for Brainrots - COMPLETE EDITION v7 Loaded!")
-print("New features: Wave Protection with VIP Walls, Fixed Auto Clicker, Skeleton ESP, Better Spawn Machine!")
+print("Nexus|Escape Tsunami for Brainrots - MODIFIED EDITION Loaded!")
+print("Changes: Longer proximity hold, Wave protection improved, Removed several toggles, Fixed ESP, Added Discord button!")
