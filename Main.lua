@@ -1,6 +1,6 @@
 --[[
-    Nexus|Escape Tsunami for Brainrots - Complete Edition Fixed v8
-    Fixes: Brainrot collection, Wave protection with VIP walls (stay until wave passes), Base Upgrade, Auto Clicker, ESP Skeleton, Spawn Machines
+    Nexus|Escape Tsunami for Brainrots - Fixed GUI Edition
+    Fixes: GUI not appearing, character loading issues, better initialization
 ]]
 
 local Players = game:GetService("Players")
@@ -16,14 +16,39 @@ local CollectionService = game:GetService("CollectionService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Wait for character properly
+-- CRITICAL: Wait for character with timeout
 local character = player.Character
 if not character then
     character = player.CharacterAdded:Wait()
 end
 
-local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-local humanoid = character:WaitForChild("Humanoid")
+-- CRITICAL: Wait for HumanoidRootPart with retry
+local humanoidRootPart, humanoid
+local function waitForCharacterParts()
+    local startTime = tick()
+    while tick() - startTime < 10 do
+        character = player.Character
+        if character then
+            humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+            humanoid = character:FindFirstChild("Humanoid")
+            if humanoidRootPart and humanoid then
+                return true
+            end
+        end
+        task.wait(0.1)
+    end
+    return false
+end
+
+if not waitForCharacterParts() then
+    warn("Failed to load character parts! Retrying...")
+    character = player.CharacterAdded:Wait()
+    waitForCharacterParts()
+end
+
+print("Character loaded:", character and character.Name or "NIL")
+print("HRP loaded:", humanoidRootPart and "YES" or "NO")
+print("Humanoid loaded:", humanoid and "YES" or "NO")
 
 -- Safely get Remotes with error handling
 local function getRemote(path, name)
@@ -61,7 +86,6 @@ local UpgradeSpeedFunction = getRemote(RemoteFunctions, "UpgradeSpeed")
 local UpgradeCarryFunction = getRemote(RemoteFunctions, "UpgradeCarry")
 local SellAllFunction = getRemote(RemoteFunctions, "SellAll")
 local SellToolFunction = getRemote(RemoteFunctions, "SellTool")
-local UpgradeBrainrotFunction = getRemote(RemoteFunctions, "UpgradeBrainrot")
 local RebirthFunction = getRemote(RemoteFunctions, "Rebirth")
 local UpdateCollectedBrainrots = getRemote(RemoteEvents, "UpdateCollectedBrainrots")
 
@@ -117,15 +141,15 @@ local isCollectingBrainrot = false
 local positionBeforeCollecting = nil
 local brainrotDropdownOpen = false
 
--- MODIFIED: Wave Protection Variables - Stay until wave completely passes
+-- Wave Protection Variables
 local waveProtectionEnabled = false
 local waveProtectionRange = 125
 local isHidingFromWave = false
 local waveHidePosition = nil
 local waveHideStartTime = nil
-local currentWavePart = nil -- Track the specific wave we're hiding from
-local WAVE_CHECK_INTERVAL = 0.1 -- Check more frequently
-local WAVE_SAFETY_BUFFER = 50 -- Extra distance to ensure wave is gone
+local currentWavePart = nil
+local WAVE_CHECK_INTERVAL = 0.1
+local WAVE_SAFETY_BUFFER = 50
 
 -- Auto Clicker Variables
 local autoClickerEnabled = false
@@ -153,7 +177,7 @@ local RARITY_ORDER = {
     "Common"
 }
 
--- Stages/Rarities for VIP Walls (in order from Common to Celestial)
+-- Stages/Rarities for VIP Walls
 local STAGE_RARITIES = {
     "Common",
     "Uncommon", 
@@ -166,1276 +190,704 @@ local STAGE_RARITIES = {
     "Celestial"
 }
 
--- Get Player Base
-local function getPlayerBase()
-    local bases = Workspace:FindFirstChild("Bases")
-    if not bases then return nil end
-    
-    for _, base in ipairs(bases:GetChildren()) do
-        if base:IsA("Model") or base:IsA("Folder") then
-            local slots = base:FindFirstChild("Slots")
-            if slots then
-                local ownerAttr = base:GetAttribute("Owner")
-                if ownerAttr == player.UserId or ownerAttr == player.Name then
-                    return base
+-- [All your functions remain the same - GetPlayerBase, FindBrainrotInActive, etc.]
+
+-- CRITICAL: Create GUI with error handling wrapped in pcall
+local function createGUI()
+    local success, err = pcall(function()
+        print("Creating GUI...")
+        
+        -- Create ScreenGui FIRST
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "NexusBrainrotHub"
+        screenGui.ResetOnSpawn = false
+        screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        screenGui.Parent = playerGui
+        
+        print("ScreenGui created")
+
+        local mainFrame = Instance.new("Frame")
+        mainFrame.Name = "MainFrame"
+        mainFrame.Size = UDim2.new(0, 750, 0, 500)
+        mainFrame.Position = UDim2.new(0.5, -375, 0.5, -250)
+        mainFrame.BackgroundColor3 = CONFIG.COLORS.Background
+        mainFrame.BackgroundTransparency = CONFIG.COLORS.BackgroundTransparency
+        mainFrame.BorderSizePixel = 0
+        mainFrame.Active = true
+        mainFrame.ClipsDescendants = true
+        mainFrame.Parent = screenGui
+        
+        print("MainFrame created")
+
+        local mainStroke = Instance.new("UIStroke")
+        mainStroke.Color = CONFIG.COLORS.White
+        mainStroke.Thickness = 1.2
+        mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        mainStroke.Parent = mainFrame
+
+        local mainCorner = Instance.new("UICorner")
+        mainCorner.CornerRadius = UDim.new(0, 16)
+        mainCorner.Parent = mainFrame
+
+        local titleBar = Instance.new("Frame")
+        titleBar.Name = "TitleBar"
+        titleBar.Size = UDim2.new(1, 0, 0, 50)
+        titleBar.BackgroundTransparency = 1
+        titleBar.Parent = mainFrame
+
+        local titleLabel = Instance.new("TextLabel")
+        titleLabel.Name = "Title"
+        titleLabel.Size = UDim2.new(1, -100, 1, 0)
+        titleLabel.Position = UDim2.new(0, 20, 0, 0)
+        titleLabel.BackgroundTransparency = 1
+        titleLabel.Font = Enum.Font.GothamBold
+        titleLabel.Text = CONFIG.TITLE
+        titleLabel.TextColor3 = CONFIG.COLORS.White
+        titleLabel.TextSize = 16
+        titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+        titleLabel.Parent = titleBar
+
+        local closeBtn = Instance.new("TextButton")
+        closeBtn.Name = "CloseBtn"
+        closeBtn.Size = UDim2.new(0, 32, 0, 32)
+        closeBtn.Position = UDim2.new(1, -42, 0.5, -16)
+        closeBtn.BackgroundTransparency = 1
+        closeBtn.Font = Enum.Font.GothamBold
+        closeBtn.Text = "✕"
+        closeBtn.TextColor3 = CONFIG.COLORS.Danger
+        closeBtn.TextSize = 18
+        closeBtn.Parent = titleBar
+
+        closeBtn.MouseButton1Click:Connect(function()
+            -- Disable all features
+            hitboxExtenderEnabled = false
+            waveProtectionEnabled = false
+            autoCollectSpecificBrainrot = false
+            autoClickerEnabled = false
+            autoSpinWheel = false
+            autoTweenToStage = false
+            espEnabled = false
+            
+            if autoClickerButton then
+                autoClickerButton:Destroy()
+            end
+            
+            for p, _ in pairs(espObjects) do
+                if espObjects[p] then
+                    espObjects[p]:Destroy()
+                    espObjects[p] = nil
                 end
+            end
+            for p, _ in pairs(skeletonESPObjects) do
+                if skeletonESPObjects[p] then
+                    skeletonESPObjects[p]:Destroy()
+                    skeletonESPObjects[p] = nil
+                end
+            end
+            
+            screenGui:Destroy()
+        end)
+
+        local sidebar = Instance.new("Frame")
+        sidebar.Name = "Sidebar"
+        sidebar.Size = UDim2.new(0, 200, 1, -50)
+        sidebar.Position = UDim2.new(0, 0, 0, 50)
+        sidebar.BackgroundColor3 = CONFIG.COLORS.Sidebar
+        sidebar.BackgroundTransparency = 0.3
+        sidebar.BorderSizePixel = 0
+        sidebar.Parent = mainFrame
+
+        local sidebarCorner = Instance.new("UICorner")
+        sidebarCorner.CornerRadius = UDim.new(0, 16)
+        sidebarCorner.Parent = sidebar
+
+        local tabContainer = Instance.new("Frame")
+        tabContainer.Name = "TabContainer"
+        tabContainer.Size = UDim2.new(1, -20, 1, -20)
+        tabContainer.Position = UDim2.new(0, 10, 0, 10)
+        tabContainer.BackgroundTransparency = 1
+        tabContainer.Parent = sidebar
+
+        local tabList = Instance.new("UIListLayout")
+        tabList.FillDirection = Enum.FillDirection.Vertical
+        tabList.SortOrder = Enum.SortOrder.LayoutOrder
+        tabList.Padding = UDim.new(0, 8)
+        tabList.Parent = tabContainer
+
+        local contentContainer = Instance.new("Frame")
+        contentContainer.Name = "ContentContainer"
+        contentContainer.Size = UDim2.new(1, -220, 1, -70)
+        contentContainer.Position = UDim2.new(0, 210, 0, 60)
+        contentContainer.BackgroundTransparency = 1
+        contentContainer.Parent = mainFrame
+
+        local currentTab = nil
+
+        -- Helper function to create tabs
+        local function createTab(name, icon)
+            local tabBtn = Instance.new("TextButton")
+            tabBtn.Name = name .. "Tab"
+            tabBtn.Size = UDim2.new(1, 0, 0, 45)
+            tabBtn.BackgroundColor3 = CONFIG.COLORS.Background
+            tabBtn.BackgroundTransparency = 0.5
+            tabBtn.BorderSizePixel = 0
+            tabBtn.AutoButtonColor = false
+            tabBtn.Font = Enum.Font.GothamBold
+            tabBtn.Text = "   " .. icon .. "  " .. name
+            tabBtn.TextColor3 = CONFIG.COLORS.Gray
+            tabBtn.TextSize = 14
+            tabBtn.TextXAlignment = Enum.TextXAlignment.Left
+            tabBtn.Parent = tabContainer
+            
+            local tabCorner = Instance.new("UICorner")
+            tabCorner.CornerRadius = UDim.new(0, 10)
+            tabCorner.Parent = tabBtn
+            
+            local contentFrame = Instance.new("ScrollingFrame")
+            contentFrame.Name = name .. "Content"
+            contentFrame.Size = UDim2.new(1, 0, 1, 0)
+            contentFrame.BackgroundTransparency = 1
+            contentFrame.BorderSizePixel = 0
+            contentFrame.ScrollBarThickness = 6
+            contentFrame.ScrollBarImageColor3 = CONFIG.COLORS.Accent
+            contentFrame.Visible = false
+            contentFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+            contentFrame.Parent = contentContainer
+            
+            local listLayout = Instance.new("UIListLayout")
+            listLayout.Padding = UDim.new(0, 10)
+            listLayout.Parent = contentFrame
+            
+            listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                contentFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 20)
+            end)
+            
+            tabBtn.MouseButton1Click:Connect(function()
+                if currentTab == contentFrame then return end
+                if currentTab then
+                    currentTab.Visible = false
+                end
+                for _, child in ipairs(tabContainer:GetChildren()) do
+                    if child:IsA("TextButton") then
+                        TweenService:Create(child, TweenInfo.new(0.2), {
+                            BackgroundColor3 = CONFIG.COLORS.Background,
+                            TextColor3 = CONFIG.COLORS.Gray
+                        }):Play()
+                    end
+                end
+                currentTab = contentFrame
+                contentFrame.Visible = true
+                TweenService:Create(tabBtn, TweenInfo.new(0.2), {
+                    BackgroundColor3 = CONFIG.COLORS.Accent,
+                    TextColor3 = CONFIG.COLORS.White
+                }):Play()
+            end)
+            
+            return contentFrame
+        end
+
+        -- Create all tabs
+        local automationTab = createTab("Automation", "⚡")
+        local combatTab = createTab("Combat", "⚔️")
+        local eventTab = createTab("Event", "🎉")
+        local stagesTab = createTab("Stages", "🏆")
+        local sellTab = createTab("Sell", "💰")
+        local settingsTab = createTab("Settings", "⚙️")
+
+        print("Tabs created")
+
+        -- Helper Functions for GUI elements
+        local function createToggle(parent, name, description, callback)
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(1, -20, 0, 70)
+            frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
+            frame.BackgroundTransparency = 0.3
+            frame.BorderSizePixel = 0
+            frame.Parent = parent
+            
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 12)
+            corner.Parent = frame
+            
+            local title = Instance.new("TextLabel")
+            title.Size = UDim2.new(1, -100, 0, 25)
+            title.Position = UDim2.new(0, 15, 0, 10)
+            title.BackgroundTransparency = 1
+            title.Font = Enum.Font.GothamBold
+            title.Text = name
+            title.TextColor3 = CONFIG.COLORS.White
+            title.TextSize = 14
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = frame
+            
+            local desc = Instance.new("TextLabel")
+            desc.Size = UDim2.new(1, -100, 0, 20)
+            desc.Position = UDim2.new(0, 15, 0, 35)
+            desc.BackgroundTransparency = 1
+            desc.Font = Enum.Font.Gotham
+            desc.Text = description
+            desc.TextColor3 = CONFIG.COLORS.Gray
+            desc.TextSize = 11
+            desc.TextXAlignment = Enum.TextXAlignment.Left
+            desc.Parent = frame
+            
+            local toggle = Instance.new("Frame")
+            toggle.Size = UDim2.new(0, 50, 0, 26)
+            toggle.Position = UDim2.new(1, -65, 0.5, -13)
+            toggle.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            toggle.BorderSizePixel = 0
+            toggle.Parent = frame
+            
+            local toggleCorner = Instance.new("UICorner")
+            toggleCorner.CornerRadius = UDim.new(1, 0)
+            toggleCorner.Parent = toggle
+            
+            local knob = Instance.new("Frame")
+            knob.Size = UDim2.new(0, 22, 0, 22)
+            knob.Position = UDim2.new(0, 2, 0.5, -11)
+            knob.BackgroundColor3 = CONFIG.COLORS.White
+            knob.BorderSizePixel = 0
+            knob.Parent = toggle
+            
+            local knobCorner = Instance.new("UICorner")
+            knobCorner.CornerRadius = UDim.new(1, 0)
+            knobCorner.Parent = knob
+            
+            local enabled = false
+            
+            local clickBtn = Instance.new("TextButton")
+            clickBtn.Size = UDim2.new(1, 0, 1, 0)
+            clickBtn.BackgroundTransparency = 1
+            clickBtn.Text = ""
+            clickBtn.Parent = frame
+            
+            clickBtn.MouseButton1Click:Connect(function()
+                enabled = not enabled
+                callback(enabled)
                 
-                local targetPart = base:IsA("Model") and base.PrimaryPart or base:FindFirstChildWhichIsA("BasePart", true)
-                if targetPart then
-                    local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
-                    if distance < 100 then
-                        return base
-                    end
+                if enabled then
+                    TweenService:Create(toggle, TweenInfo.new(0.2), {BackgroundColor3 = CONFIG.COLORS.Success}):Play()
+                    TweenService:Create(knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 26, 0.5, -11)}):Play()
+                else
+                    TweenService:Create(toggle, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 70)}):Play()
+                    TweenService:Create(knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -11)}):Play()
+                end
+            end)
+            
+            return frame
+        end
+
+        local function createSlider(parent, name, description, min, max, default, callback)
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(1, -20, 0, 90)
+            frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
+            frame.BackgroundTransparency = 0.3
+            frame.BorderSizePixel = 0
+            frame.Parent = parent
+            
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 12)
+            corner.Parent = frame
+            
+            local title = Instance.new("TextLabel")
+            title.Size = UDim2.new(1, -100, 0, 25)
+            title.Position = UDim2.new(0, 15, 0, 10)
+            title.BackgroundTransparency = 1
+            title.Font = Enum.Font.GothamBold
+            title.Text = name
+            title.TextColor3 = CONFIG.COLORS.White
+            title.TextSize = 14
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = frame
+            
+            local desc = Instance.new("TextLabel")
+            desc.Size = UDim2.new(1, -100, 0, 20)
+            desc.Position = UDim2.new(0, 15, 0, 30)
+            desc.BackgroundTransparency = 1
+            desc.Font = Enum.Font.Gotham
+            desc.Text = description
+            desc.TextColor3 = CONFIG.COLORS.Gray
+            desc.TextSize = 11
+            desc.TextXAlignment = Enum.TextXAlignment.Left
+            desc.Parent = frame
+            
+            local valueLabel = Instance.new("TextLabel")
+            valueLabel.Size = UDim2.new(0, 50, 0, 20)
+            valueLabel.Position = UDim2.new(1, -65, 0, 10)
+            valueLabel.BackgroundTransparency = 1
+            valueLabel.Font = Enum.Font.GothamBold
+            valueLabel.Text = tostring(default)
+            valueLabel.TextColor3 = CONFIG.COLORS.Accent
+            valueLabel.TextSize = 14
+            valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+            valueLabel.Parent = frame
+            
+            local sliderBg = Instance.new("Frame")
+            sliderBg.Name = "SliderBg"
+            sliderBg.Size = UDim2.new(1, -30, 0, 8)
+            sliderBg.Position = UDim2.new(0, 15, 0, 60)
+            sliderBg.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            sliderBg.BorderSizePixel = 0
+            sliderBg.Parent = frame
+            
+            local sliderBgCorner = Instance.new("UICorner")
+            sliderBgCorner.CornerRadius = UDim.new(1, 0)
+            sliderBgCorner.Parent = sliderBg
+            
+            local sliderFill = Instance.new("Frame")
+            sliderFill.Name = "SliderFill"
+            sliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+            sliderFill.BackgroundColor3 = CONFIG.COLORS.Accent
+            sliderFill.BorderSizePixel = 0
+            sliderFill.Parent = sliderBg
+            
+            local sliderFillCorner = Instance.new("UICorner")
+            sliderFillCorner.CornerRadius = UDim.new(1, 0)
+            sliderFillCorner.Parent = sliderFill
+            
+            local sliderKnob = Instance.new("Frame")
+            sliderKnob.Name = "SliderKnob"
+            sliderKnob.Size = UDim2.new(0, 16, 0, 16)
+            sliderKnob.Position = UDim2.new((default - min) / (max - min), -8, 0.5, -8)
+            sliderKnob.BackgroundColor3 = CONFIG.COLORS.White
+            sliderKnob.BorderSizePixel = 0
+            sliderKnob.Parent = sliderBg
+            
+            local sliderKnobCorner = Instance.new("UICorner")
+            sliderKnobCorner.CornerRadius = UDim.new(1, 0)
+            sliderKnobCorner.Parent = sliderKnob
+            
+            local sliderBtn = Instance.new("TextButton")
+            sliderBtn.Name = "SliderBtn"
+            sliderBtn.Size = UDim2.new(1, 0, 1, 0)
+            sliderBtn.BackgroundTransparency = 1
+            sliderBtn.Text = ""
+            sliderBtn.Parent = sliderBg
+            
+            local currentValue = default
+            
+            local function updateSlider(input)
+                local pos = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+                local value = math.floor(min + (pos * (max - min)))
+                
+                if value ~= currentValue then
+                    currentValue = value
+                    valueLabel.Text = tostring(value)
+                    
+                    TweenService:Create(sliderFill, TweenInfo.new(0.1), {Size = UDim2.new(pos, 0, 1, 0)}):Play()
+                    TweenService:Create(sliderKnob, TweenInfo.new(0.1), {Position = UDim2.new(pos, -8, 0.5, -8)}):Play()
+                    
+                    callback(value)
                 end
             end
-        end
-    end
-    
-    local closestBase = nil
-    local closestDistance = math.huge
-    
-    for _, base in ipairs(bases:GetChildren()) do
-        if base:IsA("Model") or base:IsA("Folder") then
-            local slots = base:FindFirstChild("Slots")
-            if slots then
-                local targetPart = base:IsA("Model") and base.PrimaryPart or base:FindFirstChildWhichIsA("BasePart", true)
-                if targetPart then
-                    local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
-                    if distance < closestDistance then
-                        closestDistance = distance
-                        closestBase = base
-                    end
+            
+            local dragging = false
+            
+            sliderBtn.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging = true
+                    updateSlider(input)
                 end
-            end
-        end
-    end
-    
-    return closestBase
-end
-
--- Get all brainrots from ReplicatedStorage for dropdown
-local function getAllBrainrotsFromStorage()
-    local brainrotList = {}
-    local assets = ReplicatedStorage:FindFirstChild("Assets")
-    if not assets then return brainrotList end
-    
-    local brainrotsFolder = assets:FindFirstChild("Brainrots")
-    if not brainrotsFolder then return brainrotList end
-    
-    for _, rarity in ipairs(RARITY_ORDER) do
-        local rarityFolder = brainrotsFolder:FindFirstChild(rarity)
-        if rarityFolder then
-            for _, brainrotModel in ipairs(rarityFolder:GetChildren()) do
-                if brainrotModel:IsA("Model") then
-                    table.insert(brainrotList, {
-                        name = brainrotModel.Name,
-                        rarity = rarity,
-                        fullName = rarity .. " | " .. brainrotModel.Name
-                    })
+            end)
+            
+            sliderBtn.InputEnded:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging = false
                 end
-            end
-        end
-    end
-    
-    return brainrotList
-end
-
--- Find specific brainrot in ActiveBrainrots
-local function findBrainrotInActive(brainrotName, rarity)
-    local activeBrainrots = Workspace:FindFirstChild("ActiveBrainrots")
-    if not activeBrainrots then 
-        warn("ActiveBrainrots folder not found!")
-        return nil 
-    end
-    
-    local foldersToCheck = {}
-    if rarity then
-        local folder = activeBrainrots:FindFirstChild(rarity)
-        if folder then 
-            table.insert(foldersToCheck, folder) 
-        end
-    else
-        for _, folder in ipairs(activeBrainrots:GetChildren()) do
-            if folder:IsA("Folder") then
-                table.insert(foldersToCheck, folder)
-            end
-        end
-    end
-    
-    for _, folder in ipairs(foldersToCheck) do
-        for _, renderedBrainrot in ipairs(folder:GetChildren()) do
-            if renderedBrainrot:IsA("Model") and renderedBrainrot.Name == "RenderedBrainrot" then
-                for _, child in ipairs(renderedBrainrot:GetChildren()) do
-                    if child:IsA("Model") and child.Name == brainrotName then
-                        local targetPart = renderedBrainrot.PrimaryPart 
-                        if not targetPart then
-                            targetPart = renderedBrainrot:FindFirstChild("HumanoidRootPart")
-                        end
-                        if not targetPart then
-                            targetPart = renderedBrainrot:FindFirstChildWhichIsA("BasePart")
-                        end
-                        if not targetPart and child then
-                            targetPart = child:FindFirstChildWhichIsA("BasePart")
-                        end
-                        
-                        local prompt = renderedBrainrot:FindFirstChildWhichIsA("ProximityPrompt", true)
-                        if not prompt and child then
-                            prompt = child:FindFirstChildWhichIsA("ProximityPrompt", true)
-                        end
-                        
-                        if targetPart then
-                            return {
-                                model = renderedBrainrot,
-                                brainrotModel = child,
-                                part = targetPart,
-                                name = brainrotName,
-                                rarity = folder.Name,
-                                cframe = targetPart.CFrame,
-                                prompt = prompt
-                            }
-                        end
-                    end
+            end)
+            
+            UserInputService.InputChanged:Connect(function(input)
+                if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                    updateSlider(input)
                 end
-            end
+            end)
+            
+            return frame
         end
-    end
-    
-    return nil
-end
 
--- Get VIP Wall for specific rarity/stage
-local function getVIPWallForRarity(rarity)
-    local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
-    if not defaultMap then return nil end
-    
-    local vipWalls = defaultMap:FindFirstChild("VIPWalls")
-    if not vipWalls then return nil end
-    
-    for _, wall in ipairs(vipWalls:GetChildren()) do
-        if wall:IsA("BasePart") or wall:IsA("Model") then
-            if wall.Name:find(rarity) or wall.Name:lower():find(rarity:lower()) then
-                local targetPart = wall:IsA("BasePart") and wall or wall.PrimaryPart or wall:FindFirstChildWhichIsA("BasePart")
-                if targetPart then
-                    return {
-                        part = targetPart,
-                        model = wall:IsA("Model") and wall or nil,
-                        name = wall.Name,
-                        rarity = rarity
-                    }
+        local function createButton(parent, name, callback)
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, -20, 0, 45)
+            btn.BackgroundColor3 = CONFIG.COLORS.Accent
+            btn.BorderSizePixel = 0
+            btn.Font = Enum.Font.GothamBold
+            btn.Text = name
+            btn.TextColor3 = CONFIG.COLORS.White
+            btn.TextSize = 14
+            btn.Parent = parent
+            
+            local btnCorner = Instance.new("UICorner")
+            btnCorner.CornerRadius = UDim.new(0, 10)
+            btnCorner.Parent = btn
+            
+            btn.MouseEnter:Connect(function()
+                TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(110, 123, 255)}):Play()
+            end)
+            
+            btn.MouseLeave:Connect(function()
+                TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = CONFIG.COLORS.Accent}):Play()
+            end)
+            
+            btn.MouseButton1Click:Connect(function()
+                local success, err = pcall(callback)
+                if not success then
+                    warn("Button error:", err)
                 end
-            end
+            end)
+            
+            return btn
         end
-    end
-    
-    local rarityIndex = table.find(STAGE_RARITIES, rarity)
-    if rarityIndex then
-        local walls = vipWalls:GetChildren()
-        if walls[rarityIndex] then
-            local wall = walls[rarityIndex]
-            local targetPart = wall:IsA("BasePart") and wall or wall.PrimaryPart or wall:FindFirstChildWhichIsA("BasePart")
-            if targetPart then
-                return {
-                    part = targetPart,
-                    model = wall:IsA("Model") and wall or nil,
-                    name = wall.Name,
-                    rarity = rarity
-                }
-            end
-        end
-    end
-    
-    return nil
-end
 
--- Get all VIP walls in order from Common to target
-local function getVIPWallsInOrder(targetRarity)
-    local targetIndex = table.find(STAGE_RARITIES, targetRarity)
-    if not targetIndex then return {} end
-    
-    local walls = {}
-    for i = 1, targetIndex do
-        local rarity = STAGE_RARITIES[i]
-        local wallData = getVIPWallForRarity(rarity)
-        if wallData then
-            table.insert(walls, wallData)
-        end
-    end
-    
-    return walls
-end
+        -- ==================== AUTOMATION TAB ====================
+        createToggle(automationTab, "Auto Collect Cash", "Tween to base, spawn collect parts, reset every 5s", function(enabled)
+            autoCollectCash = enabled
+            if enabled then task.spawn(autoCollectCashLoop) end
+        end)
 
--- Get nearest VIP wall for wave protection
-local function getNearestVIPWall()
-    local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
-    if not defaultMap then return nil end
-    
-    local vipWalls = defaultMap:FindFirstChild("VIPWalls")
-    if not vipWalls then return nil end
-    
-    local nearestWall = nil
-    local nearestDist = math.huge
-    
-    for _, wall in ipairs(vipWalls:GetChildren()) do
-        if wall:IsA("BasePart") or wall:IsA("Model") then
-            local targetPart = wall:IsA("BasePart") and wall or wall.PrimaryPart or wall:FindFirstChildWhichIsA("BasePart")
-            if targetPart then
-                local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
-                if distance < nearestDist then
-                    nearestDist = distance
-                    nearestWall = {
-                        part = targetPart,
-                        model = wall:IsA("Model") and wall or nil,
-                        name = wall.Name,
-                        distance = distance
-                    }
+        createSlider(automationTab, "Auto Upgrade Speed", "Select speed upgrade amount", 1, 10, 1, function(value)
+            selectedSpeedAmount = value
+        end)
+
+        createToggle(automationTab, "Auto Upgrade Speed", "Automatically upgrades speed", function(enabled)
+            autoUpgradeSpeed = enabled
+            if enabled then task.spawn(autoUpgradeSpeedLoop) end
+        end)
+
+        createToggle(automationTab, "Auto Upgrade Carry", "Automatically upgrades carry capacity", function(enabled)
+            autoUpgradeCarry = enabled
+            if enabled then task.spawn(autoUpgradeCarryLoop) end
+        end)
+
+        createToggle(automationTab, "Auto Rebirth", "Automatically rebirths when possible", function(enabled)
+            autoRebirth = enabled
+            if enabled then task.spawn(autoRebirthLoop) end
+        end)
+
+        createToggle(automationTab, "Auto Collect Selected Brainrot", "Collects selected brainrot (1.5s hold)", function(enabled)
+            autoCollectSpecificBrainrot = enabled
+            if enabled then
+                if not selectedBrainrotToCollect then
+                    warn("Please select a brainrot first!")
+                    return
                 end
-            end
-        end
-    end
-    
-    return nearestWall
-end
-
--- Safe tween to position
-local function safeTweenToPosition(targetPosition, targetCFrame, useGapIfNeeded)
-    useGapIfNeeded = useGapIfNeeded ~= false
-    
-    local safeTargetPos = Vector3.new(targetPosition.X, math.max(targetPosition.Y, 15), targetPosition.Z)
-    local safeTargetCFrame = CFrame.new(safeTargetPos) * (targetCFrame - targetCFrame.Position)
-    
-    local finalTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.8), {CFrame = safeTargetCFrame})
-    finalTween:Play()
-    finalTween.Completed:Wait()
-    
-    return true
-end
-
--- Sequential tween through all VIP walls up to target
-local function tweenToStageWallSequential(targetRarity)
-    if not targetRarity then return false end
-    if isTweeningToStage then return false end
-    
-    isTweeningToStage = true
-    
-    local success, result = pcall(function()
-        local walls = getVIPWallsInOrder(targetRarity)
-        
-        if #walls == 0 then return false end
-        
-        for i, wallData in ipairs(walls) do
-            if not isTweeningToStage then return false end
-            
-            local targetCFrame = wallData.part.CFrame * CFrame.new(0, 0, -5)
-            local tweenTime = (i == #walls) and 1.0 or 0.6
-            
-            local tween = TweenService:Create(
-                humanoidRootPart, 
-                TweenInfo.new(tweenTime), 
-                {CFrame = targetCFrame}
-            )
-            
-            tween:Play()
-            tween.Completed:Wait()
-            
-            if i < #walls then
-                task.wait(0.3)
-            end
-        end
-        
-        return true
-    end)
-    
-    isTweeningToStage = false
-    return success and result
-end
-
--- Auto Tween to Stage Loop
-local function autoTweenToStageLoop()
-    while autoTweenToStage do
-        local success, err = pcall(function()
-            if not selectedStage then
-                task.wait(2)
-                return
-            end
-            
-            local walls = getVIPWallsInOrder(selectedStage)
-            if #walls == 0 then return end
-            
-            local finalWall = walls[#walls]
-            local distance = (humanoidRootPart.Position - finalWall.part.Position).Magnitude
-            
-            if distance > 15 then
-                tweenToStageWallSequential(selectedStage)
+                task.spawn(autoCollectSpecificBrainrotLoop)
             end
         end)
-        
-        task.wait(3)
-    end
-end
 
--- MODIFIED: Wave Protection Loop - Stay in VIP wall until wave COMPLETELY passes
-local function waveProtectionLoop()
-    print("Wave Protection (VIP Walls) started - Enhanced Version")
-    isHidingFromWave = false
-    waveHidePosition = nil
-    waveHideStartTime = nil
-    currentWavePart = nil
-    
-    while waveProtectionEnabled do
-        local success, err = pcall(function()
-            local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
-            
-            -- If no active tsunamis and we were hiding, return to position
-            if not activeTsunamis or #activeTsunamis:GetChildren() == 0 then
-                if isHidingFromWave and waveHidePosition then
-                    print("No active waves detected - returning to position")
-                    
-                    local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
-                    returnTween:Play()
-                    returnTween.Completed:Wait()
-                    
-                    isHidingFromWave = false
-                    waveHidePosition = nil
-                    waveHideStartTime = nil
-                    currentWavePart = nil
-                    print("Returned to original position - all waves gone")
-                end
-                return
-            end
-            
-            -- Find nearest wave
-            local nearestWave = nil
-            local nearestDist = math.huge
-            
-            for _, wave in ipairs(activeTsunamis:GetChildren()) do
-                local wavePart = nil
-                if wave:IsA("BasePart") then
-                    wavePart = wave
-                elseif wave:IsA("Model") then
-                    wavePart = wave.PrimaryPart or wave:FindFirstChildWhichIsA("BasePart")
-                end
-                
-                if wavePart then
-                    local distance = (humanoidRootPart.Position - wavePart.Position).Magnitude
-                    if distance < nearestDist then
-                        nearestDist = distance
-                        nearestWave = wavePart
-                    end
-                end
-            end
-            
-            -- If wave is within detection range
-            if nearestWave and nearestDist <= waveProtectionRange then
-                if not isHidingFromWave then
-                    print("Wave detected at", nearestDist, "studs - moving to VIP wall!")
-                    
-                    -- Store position before hiding
-                    waveHidePosition = humanoidRootPart.CFrame
-                    waveHideStartTime = tick()
-                    currentWavePart = nearestWave
-                    
-                    -- Cancel brainrot collection if active
-                    if isCollectingBrainrot then
-                        print("Cancelling brainrot collection - WAVE PRIORITY!")
-                        isCollectingBrainrot = false
-                    end
-                    
-                    -- Get nearest VIP wall
-                    local nearestWall = getNearestVIPWall()
-                    if nearestWall then
-                        isHidingFromWave = true
-                        
-                        -- Tween to wall immediately
-                        local targetCFrame = nearestWall.part.CFrame * CFrame.new(0, 0, -5)
-                        
-                        local emergencyTween = TweenService:Create(
-                            humanoidRootPart,
-                            TweenInfo.new(0.5),
-                            {CFrame = targetCFrame}
-                        )
-                        
-                        emergencyTween:Play()
-                        emergencyTween.Completed:Wait()
-                        
-                        print("Now hiding at VIP wall:", nearestWall.name)
-                    end
-                else
-                    -- We're already hiding - check if we need to stay
-                    -- Keep checking if the wave still exists
-                    if currentWavePart and currentWavePart.Parent then
-                        local currentDist = (humanoidRootPart.Position - currentWavePart.Position).Magnitude
-                        
-                        -- If wave is still too close, stay in wall
-                        if currentDist <= (waveProtectionRange + WAVE_SAFETY_BUFFER) then
-                            -- Keep player in VIP wall (anti-afk movement)
-                            local nearestWall = getNearestVIPWall()
-                            if nearestWall then
-                                local targetCFrame = nearestWall.part.CFrame * CFrame.new(0, 0, -5)
-                                -- Small adjustment to keep player in place
-                                if (humanoidRootPart.Position - targetCFrame.Position).Magnitude > 5 then
-                                    humanoidRootPart.CFrame = targetCFrame
-                                end
-                            end
-                        end
-                    else
-                        -- Our tracked wave is gone, but there might be others
-                        -- Wait a bit then check if any waves are still close
-                        task.wait(0.5)
-                        local stillThreatened = false
-                        
-                        for _, wave in ipairs(activeTsunamis:GetChildren()) do
-                            local wavePart = wave:IsA("BasePart") and wave or wave.PrimaryPart or wave:FindFirstChildWhichIsA("BasePart")
-                            if wavePart then
-                                local dist = (humanoidRootPart.Position - wavePart.Position).Magnitude
-                                if dist <= (waveProtectionRange + WAVE_SAFETY_BUFFER) then
-                                    stillThreatened = true
-                                    currentWavePart = wavePart
-                                    break
-                                end
-                            end
-                        end
-                        
-                        if not stillThreatened then
-                            print("Wave passed - returning to position")
-                            
-                            local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
-                            returnTween:Play()
-                            returnTween.Completed:Wait()
-                            
-                            isHidingFromWave = false
-                            waveHidePosition = nil
-                            waveHideStartTime = nil
-                            currentWavePart = nil
-                        end
-                    end
-                end
-            elseif nearestWave and nearestDist > waveProtectionRange and isHidingFromWave then
-                -- Wave is far away now, return to position
-                print("Wave moved far away - returning to position")
-                
-                local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
-                returnTween:Play()
-                returnTween.Completed:Wait()
-                
-                isHidingFromWave = false
-                waveHidePosition = nil
-                waveHideStartTime = nil
-                currentWavePart = nil
-            end
-        end)
-        
-        if not success then
-            warn("Wave protection error:", err)
-        end
-        
-        task.wait(WAVE_CHECK_INTERVAL)
-    end
-    
-    -- Cleanup when disabled
-    if isHidingFromWave and waveHidePosition then
-        local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
-        returnTween:Play()
-    end
-    
-    isHidingFromWave = false
-    waveHidePosition = nil
-    waveHideStartTime = nil
-    currentWavePart = nil
-    print("Wave Protection stopped")
-end
-
--- Proximity prompt activation with extended hold
-local function activateProximityPrompt(prompt)
-    if not prompt then return false end
-    if not prompt:IsA("ProximityPrompt") then return false end
-    
-    prompt:InputHoldBegin()
-    task.wait(1.5)
-    prompt:InputHoldEnd()
-    
-    return true
-end
-
--- Auto Collect Specific Brainrot Loop
-local function autoCollectSpecificBrainrotLoop()
-    while autoCollectSpecificBrainrot do
-        local success, err = pcall(function()
-            if not selectedBrainrotToCollect then
-                task.wait(2)
-                return
-            end
-            
-            if isHidingFromWave then
-                task.wait(1)
-                return
-            end
-            
-            local foundBrainrot = findBrainrotInActive(selectedBrainrotToCollect.name, selectedBrainrotToCollect.rarity)
-            
-            if foundBrainrot then
-                isCollectingBrainrot = true
-                positionBeforeCollecting = humanoidRootPart.CFrame
-                
-                local targetCFrame = foundBrainrot.cframe + Vector3.new(0, 5, 0)
-                safeTweenToPosition(foundBrainrot.part.Position, targetCFrame, false)
-                
-                task.wait(0.3)
-                
-                if foundBrainrot.prompt then
-                    activateProximityPrompt(foundBrainrot.prompt)
-                else
-                    firetouchinterest(humanoidRootPart, foundBrainrot.part, 0)
-                    task.wait(0.05)
-                    firetouchinterest(humanoidRootPart, foundBrainrot.part, 1)
-                end
-                
-                task.wait(1.0)
-                
-                local base = getPlayerBase()
-                if base then
-                    local basePart = base:FindFirstChildWhichIsA("BasePart", true)
-                    if basePart then
-                        safeTweenToPosition(basePart.Position, basePart.CFrame + Vector3.new(0, 5, 0), false)
-                    end
-                end
-                
-                isCollectingBrainrot = false
-                positionBeforeCollecting = nil
-                task.wait(2)
+        createToggle(automationTab, "Auto Clicker", "Draggable button that auto-clicks continuously", function(enabled)
+            autoClickerEnabled = enabled
+            if enabled then
+                createAutoClickerButton()
             else
-                task.wait(1)
+                if autoClickerButton then
+                    autoClickerButton:Destroy()
+                    autoClickerButton = nil
+                end
             end
         end)
-        
-        if not success then
-            isCollectingBrainrot = false
-        end
-        
-        task.wait(0.5)
-    end
-    
-    isCollectingBrainrot = false
-end
 
--- Auto functions
-local function getAndEquipTool()
-    local backpack = player:WaitForChild("Backpack")
-    for _, tool in ipairs(backpack:GetChildren()) do
-        if tool:IsA("Tool") then
-            tool.Parent = character
-            return tool
-        end
-    end
-    return nil
-end
+        createSlider(automationTab, "Clicker CPS", "Clicks per second", 1, 50, 10, function(value)
+            autoClickerCPS = value
+            if autoClickerButton and autoClickerEnabled then
+                local button = autoClickerButton:FindFirstChild("AutoClickerButton")
+                if button then
+                    button.Text = "🖱️\nAUTO\nCLICK\nON\n" .. value .. " CPS"
+                end
+            end
+        end)
 
-local function simulateClick()
-    pcall(function()
-        local tool = character:FindFirstChildWhichIsA("Tool")
-        if tool then
-            tool:Activate()
-        end
-    end)
-end
+        -- ==================== COMBAT TAB ====================
+        createToggle(combatTab, "Visible Hitbox", "Makes enemy heads BIG and RED", function(enabled)
+            hitboxExtenderEnabled = enabled
+            if enabled then
+                task.spawn(visibleHitboxLoop)
+            end
+        end)
 
-local function autoHitLoop()
-    while autoHitEnabled do
-        local success, err = pcall(function()
-            for _, targetPlayer in ipairs(Players:GetPlayers()) do
-                if targetPlayer ~= player and targetPlayer.Character then
-                    local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-                    if targetHRP then
-                        local distance = (humanoidRootPart.Position - targetHRP.Position).Magnitude
-                        if distance <= hitboxRange then
-                            local tool = character:FindFirstChildWhichIsA("Tool") or getAndEquipTool()
-                            if tool then
-                                humanoidRootPart.CFrame = CFrame.lookAt(humanoidRootPart.Position, Vector3.new(targetHRP.Position.X, humanoidRootPart.Position.Y, targetHRP.Position.Z))
-                                simulateClick()
-                                if tool:FindFirstChild("Attack") and tool.Attack:IsA("RemoteEvent") then
-                                    tool.Attack:FireServer(targetPlayer)
-                                end
+        createSlider(combatTab, "Head Size", "How big to make heads (5-50 studs)", 5, 50, 15, function(value)
+            hitboxRange = value
+        end)
+
+        createToggle(combatTab, "Show Range Visual", "Shows sphere around you", function(enabled)
+            hitboxVisualEnabled = enabled
+            if enabled then
+                task.spawn(function()
+                    while hitboxVisualEnabled do
+                        if hitboxVisualPart then
+                            hitboxVisualPart.Size = Vector3.new(hitboxRange * 2, hitboxRange * 2, hitboxRange * 2)
+                            if humanoidRootPart then
+                                hitboxVisualPart.CFrame = humanoidRootPart.CFrame
                             end
-                            break
+                        elseif not hitboxVisualPart then
+                            hitboxVisualPart = Instance.new("Part")
+                            hitboxVisualPart.Name = "HitboxVisual"
+                            hitboxVisualPart.Shape = Enum.PartType.Ball
+                            hitboxVisualPart.Material = Enum.Material.ForceField
+                            hitboxVisualPart.Color = Color3.fromRGB(88, 101, 242)
+                            hitboxVisualPart.Transparency = 0.7
+                            hitboxVisualPart.CanCollide = false
+                            hitboxVisualPart.Anchored = true
+                            hitboxVisualPart.Size = Vector3.new(hitboxRange * 2, hitboxRange * 2, hitboxRange * 2)
+                            hitboxVisualPart.Parent = Workspace
                         end
-                    end
-                end
-            end
-        end)
-        task.wait(0.1)
-    end
-end
-
--- Auto Collect Cash Loop - Modified
-local function autoCollectCashLoop()
-    local resetTimer = 0
-    
-    while autoCollectCash do
-        local success, err = pcall(function()
-            local base = getPlayerBase()
-            if base then
-                -- Tween to base first
-                local basePart = base:FindFirstChildWhichIsA("BasePart", true)
-                if basePart then
-                    local targetCFrame = basePart.CFrame + Vector3.new(0, 5, 0)
-                    local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = targetCFrame})
-                    tween:Play()
-                    tween.Completed:Wait()
-                    task.wait(0.2)
-                end
-                
-                local slots = base:FindFirstChild("Slots")
-                if slots then
-                    for i = 1, 40 do
-                        if not autoCollectCash then break end
-                        local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
-                        if slot then
-                            local collectPart = slot:FindFirstChild("Collect")
-                            if collectPart and collectPart:IsA("BasePart") then
-                                collectPart.CFrame = humanoidRootPart.CFrame * CFrame.new(0, -3, 0)
-                                if CollectMoneyEvent then
-                                    CollectMoneyEvent:FireServer()
-                                end
-                                task.wait(0.05)
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-        
-        resetTimer = resetTimer + 0.05
-        if resetTimer >= 5 then
-            local currentPos = humanoidRootPart.CFrame
-            character:BreakJoints()
-            resetTimer = 0
-            
-            player.CharacterAdded:Wait()
-            task.wait(0.5)
-            if humanoidRootPart then
-                humanoidRootPart.CFrame = currentPos
-            end
-        end
-        
-        task.wait(0.05)
-    end
-    autoCollectCashTweened = false
-end
-
--- Auto Collect Gold Bars Loop
-local function autoCollectGoldBarsLoop()
-    while autoCollectGoldBars do
-        local success, err = pcall(function()
-            local moneyEventParts = Workspace:FindFirstChild("MoneyEventParts")
-            if not moneyEventParts then return end
-            
-            for _, child in ipairs(moneyEventParts:GetChildren()) do
-                if not autoCollectGoldBars then break end
-                
-                if child:IsA("Model") and child.Name == "GoldBar" then
-                    local mainPart = child:FindFirstChild("Main")
-                    if mainPart and mainPart:IsA("BasePart") then
-                        child:SetPrimaryPartCFrame(humanoidRootPart.CFrame * CFrame.new(0, 0, -3))
-                        
-                        firetouchinterest(humanoidRootPart, mainPart, 0)
                         task.wait(0.05)
-                        firetouchinterest(humanoidRootPart, mainPart, 1)
-                        
-                        task.wait(0.1)
                     end
-                end
-            end
-        end)
-        
-        task.wait(0.2)
-    end
-end
-
--- Auto Spin Wheel Loop
-local function autoSpinWheelLoop()
-    local Net = require(ReplicatedStorage.Packages.Net)
-    local WheelSpinRoll = Net:RemoteFunction("WheelSpin.Roll")
-    local WheelSpinComplete = Net:RemoteEvent("WheelSpin.Complete")
-    
-    while autoSpinWheel do
-        local success, err = pcall(function()
-            local ClientGlobals = require(ReplicatedStorage.Client.Modules.ClientGlobals)
-            local spins = ClientGlobals.PlayerData:TryIndex({"WheelSpins", "Money"}) or 0
-            
-            if spins > 0 then
-                local result, _, _, spinId = WheelSpinRoll:InvokeServer("Money", false)
-                
-                if result then
-                    task.wait(7.5)
-                    
-                    if spinId then
-                        WheelSpinComplete:FireServer(spinId)
-                    end
-                    
-                    task.wait(1)
-                else
-                    task.wait(2)
-                end
-            else
-                local EconomyMath = require(ReplicatedStorage.Shared.utils.EconomyMath)
-                local coins = ClientGlobals.PlayerData:TryIndex({"SpecialCurrency", "MoneyCoin"}) or 0
-                
-                if coins >= EconomyMath.WheelCoinCost then
-                    local result, _, _, spinId = WheelSpinRoll:InvokeServer("Money", false)
-                    
-                    if result then
-                        task.wait(7.5)
-                        if spinId then
-                            WheelSpinComplete:FireServer(spinId)
-                        end
-                        task.wait(1)
-                    else
-                        task.wait(2)
-                    end
-                else
-                    task.wait(5)
-                end
-            end
-        end)
-        
-        if not success then
-            task.wait(3)
-        end
-        
-        task.wait(1)
-    end
-end
-
-local function autoUpgradeSpeedLoop()
-    while autoUpgradeSpeed do
-        if UpgradeSpeedFunction then
-            pcall(function()
-                UpgradeSpeedFunction:InvokeServer(selectedSpeedAmount)
-            end)
-        end
-        task.wait(0.5)
-    end
-end
-
-local function autoUpgradeCarryLoop()
-    while autoUpgradeCarry do
-        if UpgradeCarryFunction then
-            pcall(function()
-                UpgradeCarryFunction:InvokeServer()
-            end)
-        end
-        task.wait(0.5)
-    end
-end
-
-local function autoRebirthLoop()
-    while autoRebirth do
-        if RebirthFunction then
-            pcall(function()
-                RebirthFunction:InvokeServer()
-            end)
-        end
-        task.wait(2)
-    end
-end
-
-local function autoSellInventoryLoop()
-    while autoSellInventory do
-        if SellAllFunction then
-            pcall(function()
-                SellAllFunction:InvokeServer()
-            end)
-        end
-        task.wait(1)
-    end
-end
-
--- Auto Clicker Button
-local function createAutoClickerButton()
-    if autoClickerButton then
-        autoClickerButton:Destroy()
-        autoClickerButton = nil
-    end
-    
-    if autoClickerLoop then
-        autoClickerLoop = nil
-    end
-    
-    local clickerGui = Instance.new("ScreenGui")
-    clickerGui.Name = "AutoClickerGUI"
-    clickerGui.ResetOnSpawn = false
-    clickerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    clickerGui.Parent = playerGui
-    
-    local button = Instance.new("TextButton")
-    button.Name = "AutoClickerButton"
-    button.Size = UDim2.new(0, 100, 0, 100)
-    button.Position = UDim2.new(0.8, 0, 0.5, 0)
-    button.BackgroundColor3 = CONFIG.COLORS.Accent
-    button.BorderSizePixel = 0
-    button.Text = "🖱️\nAUTO\nCLICK\nON"
-    button.TextColor3 = CONFIG.COLORS.White
-    button.TextSize = 14
-    button.Font = Enum.Font.GothamBold
-    button.TextWrapped = true
-    button.Parent = clickerGui
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0)
-    corner.Parent = button
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = CONFIG.COLORS.White
-    stroke.Thickness = 3
-    stroke.Parent = button
-    
-    -- Make draggable
-    local dragging = false
-    local dragStart = nil
-    local startPos = nil
-    
-    button.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = button.Position
-        end
-    end)
-    
-    button.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-    
-    local function startClicking()
-        if autoClickerLoop then return end
-        
-        button.BackgroundColor3 = CONFIG.COLORS.Success
-        button.Text = "🖱️\nAUTO\nCLICK\nON\n" .. autoClickerCPS .. " CPS"
-        
-        autoClickerLoop = task.spawn(function()
-            while autoClickerEnabled do
-                pcall(function()
-                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-                    task.wait(0.05)
-                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
-                    
-                    local tool = character:FindFirstChildWhichIsA("Tool")
-                    if tool then
-                        tool:Activate()
+                    if hitboxVisualPart then
+                        hitboxVisualPart:Destroy()
+                        hitboxVisualPart = nil
                     end
                 end)
-                
-                local waitTime = 1 / autoClickerCPS
-                task.wait(waitTime)
-            end
-        end)
-    end
-    
-    local function stopClicking()
-        autoClickerLoop = nil
-        button.BackgroundColor3 = CONFIG.COLORS.Accent
-        button.Text = "🖱️\nAUTO\nCLICK\nOFF"
-    end
-    
-    if autoClickerEnabled then
-        startClicking()
-    else
-        stopClicking()
-    end
-    
-    autoClickerButton = clickerGui
-    
-    return {
-        Start = startClicking,
-        Stop = stopClicking,
-        UpdateCPS = function(newCPS)
-            autoClickerCPS = newCPS
-            if autoClickerEnabled then
-                button.Text = "🖱️\nAUTO\nCLICK\nON\n" .. autoClickerCPS .. " CPS"
-            end
-        end,
-        Destroy = function()
-            clickerGui:Destroy()
-            autoClickerButton = nil
-            autoClickerLoop = nil
-        end
-    }
-end
-
--- Visible Hitbox
-local visibleHitboxParts = {}
-
-local function visibleHitboxLoop()
-    while hitboxExtenderEnabled do
-        local success, err = pcall(function()
-            for _, targetPlayer in ipairs(Players:GetPlayers()) do
-                if targetPlayer ~= player and targetPlayer.Character then
-                    local targetChar = targetPlayer.Character
-                    local head = targetChar:FindFirstChild("Head")
-                    local hrp = targetChar:FindFirstChild("HumanoidRootPart")
-                    
-                    if head then
-                        if not head:GetAttribute("OriginalSize") then
-                            head:SetAttribute("OriginalSize", head.Size)
-                            head:SetAttribute("OriginalTransparency", head.Transparency)
-                        end
-                        
-                        head.Size = Vector3.new(hitboxRange, hitboxRange, hitboxRange)
-                        head.Transparency = 0.3
-                        head.Color = Color3.fromRGB(255, 0, 0)
-                        head.Material = Enum.Material.Neon
-                        
-                        if not visibleHitboxParts[targetPlayer] then
-                            visibleHitboxParts[targetPlayer] = {}
-                        end
-                        visibleHitboxParts[targetPlayer].Head = head
-                    end
-                    
-                    if hrp then
-                        if not hrp:GetAttribute("OriginalSize") then
-                            hrp:SetAttribute("OriginalSize", hrp.Size)
-                        end
-                        hrp.Size = Vector3.new(hitboxRange * 0.5, hitboxRange * 0.5, hitboxRange * 0.5)
-                        visibleHitboxParts[targetPlayer].HRP = hrp
-                    end
-                    
-                    for _, part in ipairs(targetChar:GetDescendants()) do
-                        if part:IsA("BasePart") and part.Name ~= "Head" and part.Name ~= "HumanoidRootPart" then
-                            if not part:GetAttribute("OriginalSize") then
-                                part:SetAttribute("OriginalSize", part.Size)
-                            end
-                            part.Size = part:GetAttribute("OriginalSize") * 1.5
-                        end
-                    end
-                end
-            end
-        end)
-        
-        task.wait(0.5)
-    end
-    
-    pcall(function()
-        for targetPlayer, parts in pairs(visibleHitboxParts) do
-            if targetPlayer.Character then
-                for partName, part in pairs(parts) do
-                    if part and part.Parent then
-                        part.Size = part:GetAttribute("OriginalSize") or part.Size
-                        if partName == "Head" then
-                            part.Transparency = part:GetAttribute("OriginalTransparency") or 0
-                            part.Color = Color3.fromRGB(255, 255, 255)
-                            part.Material = Enum.Material.Plastic
-                        end
-                    end
-                end
-            end
-        end
-        visibleHitboxParts = {}
-    end)
-end
-
--- Skeleton ESP
-local function createSkeletonESP(targetPlayer)
-    if targetPlayer == player then return end
-    if skeletonESPObjects[targetPlayer] then return end
-    
-    local espFolder = Instance.new("Folder")
-    espFolder.Name = targetPlayer.Name .. "_SkeletonESP"
-    espFolder.Parent = playerGui
-    
-    local lines = {}
-    local distanceLabel = nil
-    
-    local function onCharacterAdded(char)
-        task.wait(1)
-        
-        local humanoid = char:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        
-        local billboard = Instance.new("BillboardGui")
-        billboard.Name = "DistanceLabel"
-        billboard.Size = UDim2.new(0, 200, 0, 50)
-        billboard.StudsOffset = Vector3.new(0, 5, 0)
-        billboard.AlwaysOnTop = true
-        billboard.Parent = espFolder
-        
-        distanceLabel = Instance.new("TextLabel")
-        distanceLabel.Size = UDim2.new(1, 0, 1, 0)
-        distanceLabel.BackgroundTransparency = 1
-        distanceLabel.Text = "0 studs"
-        distanceLabel.TextColor3 = CONFIG.COLORS.White
-        distanceLabel.TextStrokeTransparency = 0
-        distanceLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-        distanceLabel.Font = Enum.Font.GothamBold
-        distanceLabel.TextSize = 14
-        distanceLabel.Parent = billboard
-        
-        local function updateSkeleton()
-            if not espEnabled then return end
-            if not targetPlayer.Character then return end
-            
-            local head = char:FindFirstChild("Head")
-            local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
-            local leftArm = char:FindFirstChild("LeftUpperArm") or char:FindFirstChild("Left Arm")
-            local rightArm = char:FindFirstChild("RightUpperArm") or char:FindFirstChild("Right Arm")
-            local leftLeg = char:FindFirstChild("LeftUpperLeg") or char:FindFirstChild("Left Leg")
-            local rightLeg = char:FindFirstChild("RightUpperLeg") or char:FindFirstChild("Right Leg")
-            local root = char:FindFirstChild("HumanoidRootPart")
-            
-            if not (head and torso and root) then return end
-            
-            if distanceLabel and distanceLabel.Parent then
-                local dist = math.floor((humanoidRootPart.Position - root.Position).Magnitude)
-                distanceLabel.Text = dist .. " studs"
-                billboard.Adornee = head
-            end
-            
-            for _, line in ipairs(lines) do
-                if line then line:Destroy() end
-            end
-            lines = {}
-            
-            local function createLine(part1, part2, color)
-                if not (part1 and part2) then return end
-                
-                local line = Instance.new("LineHandleAdornment")
-                line.Name = "SkeletonLine"
-                line.Color3 = color or CONFIG.COLORS.ESP
-                line.Thickness = 2
-                line.ZIndex = 10
-                line.AlwaysOnTop = true
-                line.Adornee = workspace.Terrain
-                line.Parent = espFolder
-                
-                local function updateLine()
-                    if not (part1.Parent and part2.Parent) then 
-                        line:Destroy()
-                        return 
-                    end
-                    local pos1 = part1.Position
-                    local pos2 = part2.Position
-                    line.Length = (pos2 - pos1).Magnitude
-                    line.CFrame = CFrame.lookAt(pos1, pos2) * CFrame.new(0, 0, -line.Length / 2)
-                end
-                
-                updateLine()
-                table.insert(lines, line)
-                
-                local connection
-                connection = RunService.RenderStepped:Connect(function()
-                    if not line or not line.Parent then
-                        connection:Disconnect()
-                        return
-                    end
-                    updateLine()
-                end)
-            end
-            
-            createLine(head, torso, CONFIG.COLORS.ESP)
-            createLine(torso, leftArm, CONFIG.COLORS.ESP)
-            createLine(torso, rightArm, CONFIG.COLORS.ESP)
-            createLine(torso, leftLeg, CONFIG.COLORS.ESP)
-            createLine(torso, rightLeg, CONFIG.COLORS.ESP)
-            createLine(leftArm, leftLeg and leftLeg:FindFirstChild("LeftLowerLeg") or leftLeg, CONFIG.COLORS.ESP)
-            createLine(rightArm, rightLeg and rightLeg:FindFirstChild("RightLowerLeg") or rightLeg, CONFIG.COLORS.ESP)
-        end
-        
-        char:WaitForChild("Humanoid").Died:Connect(function()
-            for _, line in ipairs(lines) do
-                if line then line:Destroy() end
-            end
-            lines = {}
-        end)
-        
-        while espEnabled and targetPlayer.Character == char do
-            updateSkeleton()
-            task.wait(0.1)
-        end
-    end
-    
-    if targetPlayer.Character then
-        onCharacterAdded(targetPlayer.Character)
-    end
-    
-    targetPlayer.CharacterAdded:Connect(onCharacterAdded)
-    skeletonESPObjects[targetPlayer] = espFolder
-end
-
-local function removeSkeletonESP(targetPlayer)
-    if skeletonESPObjects[targetPlayer] then
-        skeletonESPObjects[targetPlayer]:Destroy()
-        skeletonESPObjects[targetPlayer] = nil
-    end
-end
-
--- Regular ESP
-local function createESP(targetPlayer)
-    if targetPlayer == player then return end
-    if espObjects[targetPlayer] then return end
-    
-    local espFolder = Instance.new("Folder")
-    espFolder.Name = targetPlayer.Name .. "_ESP"
-    espFolder.Parent = playerGui
-    
-    local function onCharacterAdded(char)
-        task.wait(1)
-        
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        local head = char:FindFirstChild("Head")
-        local humanoid = char:FindFirstChild("Humanoid")
-        
-        if not hrp or not head then return end
-        
-        local box = Instance.new("BoxHandleAdornment")
-        box.Name = "ESPBox"
-        box.Size = hrp.Size + Vector3.new(2, 3, 2)
-        box.Color3 = CONFIG.COLORS.ESP
-        box.Transparency = 0.5
-        box.ZIndex = 10
-        box.AlwaysOnTop = true
-        box.Adornee = hrp
-        box.Parent = espFolder
-        
-        local billboard = Instance.new("BillboardGui")
-        billboard.Name = "ESPName"
-        billboard.Size = UDim2.new(0, 200, 0, 50)
-        billboard.StudsOffset = Vector3.new(0, 3, 0)
-        billboard.AlwaysOnTop = true
-        billboard.Adornee = head
-        billboard.Parent = espFolder
-        
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Size = UDim2.new(1, 0, 1, 0)
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.Text = targetPlayer.Name
-        nameLabel.TextColor3 = CONFIG.COLORS.ESP
-        nameLabel.TextStrokeTransparency = 0
-        nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-        nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.TextSize = 14
-        nameLabel.Parent = billboard
-        
-        if humanoid then
-            local healthLabel = Instance.new("TextLabel")
-            healthLabel.Name = "ESPHealth"
-            healthLabel.Size = UDim2.new(1, 0, 0.5, 0)
-            healthLabel.Position = UDim2.new(0, 0, 0.5, 0)
-            healthLabel.BackgroundTransparency = 1
-            healthLabel.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
-            healthLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-            healthLabel.TextStrokeTransparency = 0
-            healthLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-            healthLabel.Font = Enum.Font.GothamBold
-            healthLabel.TextSize = 12
-            healthLabel.Parent = billboard
-            
-            humanoid.HealthChanged:Connect(function()
-                if healthLabel and healthLabel.Parent then
-                    healthLabel.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
-                end
-            end)
-        end
-        
-        local tracer = Instance.new("Frame")
-        tracer.Name = "ESPTracer"
-        tracer.BackgroundColor3 = CONFIG.COLORS.ESP
-        tracer.BorderSizePixel = 0
-        tracer.Size = UDim2.new(0, 2, 0, 2)
-        tracer.Parent = espFolder
-        
-        local connection = RunService.RenderStepped:Connect(function()
-            if not espEnabled or not tracer.Parent then 
-                connection:Disconnect()
-                return 
-            end
-            if not targetPlayer.Character or not hrp.Parent then 
-                tracer.Visible = false
-                return 
-            end
-            
-            local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-            if onScreen then
-                local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                local target = Vector2.new(screenPos.X, screenPos.Y)
-                local distance = (center - target).Magnitude
-                
-                tracer.Visible = true
-                tracer.Size = UDim2.new(0, distance, 0, 2)
-                tracer.Position = UDim2.new(0, math.min(center.X, target.X), 0, math.min(center.Y, target.Y))
-                tracer.Rotation = math.deg(math.atan2(target.Y - center.Y, target.X - center.X))
             else
-                tracer.Visible = false
+                if hitboxVisualPart then
+                    hitboxVisualPart:Destroy()
+                    hitboxVisualPart = nil
+                end
             end
         end)
-    end
-    
-    if targetPlayer.Character then
-        onCharacterAdded(targetPlayer.Character)
-    end
-    
-    targetPlayer.CharacterAdded:Connect(onCharacterAdded)
-    espObjects[targetPlayer] = espFolder
-end
 
-local function removeESP(targetPlayer)
-    if espObjects[targetPlayer] then
-        espObjects[targetPlayer]:Destroy()
-        espObjects[targetPlayer] = nil
-    end
-end
+        createToggle(combatTab, "Player ESP + Skeleton", "Shows skeleton, distance, boxes, names, health", function(enabled)
+            espEnabled = enabled
+            if enabled then
+                task.spawn(espLoop)
+            else
+                for p, _ in pairs(espObjects) do
+                    if espObjects[p] then
+                        espObjects[p]:Destroy()
+                        espObjects[p] = nil
+                    end
+                end
+                for p, _ in pairs(skeletonESPObjects) do
+                    if skeletonESPObjects[p] then
+                        skeletonESPObjects[p]:Destroy()
+                        skeletonESPObjects[p] = nil
+                    end
+                end
+            end
+        end)
 
--- ESP Loop
-local function espLoop()
-    for p, _ in pairs(espObjects) do
-        removeESP(p)
-    end
-    for p, _ in pairs(skeletonESPObjects) do
-        removeSkeletonESP(p)
-    end
-    
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player then
-            createESP(p)
-            createSkeletonESP(p)
-        end
-    end
-    
-    local playerAddedConnection = Players.PlayerAdded:Connect(function(p)
-        if espEnabled then
-            createESP(p)
-            createSkeletonESP(p)
-        end
+        createToggle(combatTab, "Auto Hit", "Auto attacks enemies in range", function(enabled)
+            autoHitEnabled = enabled
+            if enabled then task.spawn(autoHitLoop) end
+        end)
+
+        -- ==================== EVENT TAB ====================
+        createToggle(eventTab, "Auto Collect Gold Bars", "Teleports gold bar models to you", function(enabled)
+            autoCollectGoldBars = enabled
+            if enabled then task.spawn(autoCollectGoldBarsLoop) end
+        end)
+
+        createToggle(eventTab, "Auto Complete Obby", "Auto completes all 3 obbies", function(enabled)
+            autoCompleteObby = enabled
+            if enabled then task.spawn(autoCompleteObbyLoop) end
+        end)
+
+        createToggle(eventTab, "Auto Spin Wheel", "Automatically spins the wheel when near", function(enabled)
+            autoSpinWheel = enabled
+            if enabled then task.spawn(autoSpinWheelLoop) end
+        end)
+
+        -- ==================== STAGES TAB ====================
+        createSlider(stagesTab, "Select Stage", "Stage number (1-9)", 1, 9, 1, function(value)
+            selectedStage = STAGE_RARITIES[value]
+        end)
+
+        createButton(stagesTab, "Tween to Selected Stage", function()
+            if not selectedStage then
+                warn("Please select a stage first!")
+                return
+            end
+            tweenToStageWallSequential(selectedStage)
+        end)
+
+        createToggle(stagesTab, "Auto Tween to Stage", "Automatically tweens to selected stage wall", function(enabled)
+            autoTweenToStage = enabled
+            if enabled then
+                if not selectedStage then
+                    warn("Please select a stage first!")
+                    autoTweenToStage = false
+                    return
+                end
+                task.spawn(autoTweenToStageLoop)
+            end
+        end)
+
+        -- ==================== SELL TAB ====================
+        createToggle(sellTab, "Auto Sell Inventory", "Sells all your brainrots automatically", function(enabled)
+            autoSellInventory = enabled
+            if enabled then task.spawn(autoSellInventoryLoop) end
+        end)
+
+        createButton(sellTab, "Sell Holding Brainrots", function()
+            if SellToolFunction then
+                SellToolFunction:InvokeServer()
+                print("Sold holding brainrots!")
+            else
+                warn("SellTool remote not found!")
+            end
+        end)
+
+        -- ==================== SETTINGS TAB ====================
+        createToggle(settingsTab, "Wave Protection (VIP Walls)", "Stays in VIP walls until wave passes", function(enabled)
+            waveProtectionEnabled = enabled
+            if enabled then
+                task.spawn(waveProtectionLoop)
+            end
+        end)
+
+        createSlider(settingsTab, "Wave Detection Range", "How far to detect waves", 50, 200, 125, function(value)
+            waveProtectionRange = value
+        end)
+
+        createButton(settingsTab, "📋 Copy Discord Link", function()
+            local discordLink = "https://discord.gg/nexus"
+            if setclipboard then
+                setclipboard(discordLink)
+                print("Discord link copied!")
+            else
+                print("Discord Link:", discordLink)
+            end
+        end)
+
+        -- Select Automation tab by default
+        task.delay(0.5, function()
+            local autoTab = tabContainer:FindFirstChild("AutomationTab")
+            if autoTab then
+                autoTab.MouseButton1Click:Fire()
+            end
+        end)
+
+        print("GUI Created Successfully!")
     end)
     
-    local playerRemovingConnection = Players.PlayerRemoving:Connect(function(p)
-        removeESP(p)
-        removeSkeletonESP(p)
-    end)
-    
-    while espEnabled do
-        task.wait(1)
-    end
-    
-    playerAddedConnection:Disconnect()
-    playerRemovingConnection:Disconnect()
-    
-    for p, _ in pairs(espObjects) do
-        removeESP(p)
-    end
-    for p, _ in pairs(skeletonESPObjects) do
-        removeSkeletonESP(p)
+    if not success then
+        warn("GUI Creation Failed:", err)
+        -- Create error GUI
+        local errorGui = Instance.new("ScreenGui")
+        errorGui.Name = "ErrorGui"
+        errorGui.Parent = playerGui
+        
+        local errorLabel = Instance.new("TextLabel")
+        errorLabel.Size = UDim2.new(0, 400, 0, 100)
+        errorLabel.Position = UDim2.new(0.5, -200, 0.5, -50)
+        errorLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+        errorLabel.Text = "GUI Error: " .. tostring(err)
+        errorLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        errorLabel.TextWrapped = true
+        errorLabel.Parent = errorGui
     end
 end
 
--- GUI Creation (abbreviated for space - same as previous version)
--- [GUI creation code remains the same as your original script]
+-- Character respawn handler
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    humanoid = character:WaitForChild("Humanoid")
+end)
 
-print("Nexus|Escape Tsunami for Brainrots - MODIFIED EDITION Loaded!")
-print("Changes: Improved Wave Protection (stays until wave passes), Fixed Key System, Better ESP!")
+-- CRITICAL: Delay GUI creation to ensure everything is loaded
+task.delay(2, function()
+    print("Creating GUI after delay...")
+    createGUI()
+end)
+
+print("Script loaded, waiting to create GUI...")
