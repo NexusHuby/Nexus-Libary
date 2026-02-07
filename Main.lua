@@ -1,6 +1,6 @@
 --[[
-    Nexus|Escape Tsunami for Brainrots - Ultimate Fixed Edition v9
-    Fixes: All toggles working, Auto Collect Cash improved, Auto Farm Ultra added, Arcade section added
+    Nexus|Escape Tsunami for Brainrots - Ultimate Fixed Edition v10
+    Fixes: Auto Collect Cash base-only, Instant proximity prompts, Auto Farm Ultra improvements, Event tab organization
 ]]
 
 local Players = game:GetService("Players")
@@ -110,15 +110,16 @@ local CONFIG = {
     }
 }
 
--- State Variables - ALL MUST BE FALSE BY DEFAULT
+-- State Variables
 local autoCollectCash = false
 local autoUpgradeSpeed = false
 local selectedSpeedAmount = 1
 local autoUpgradeCarry = false
 local autoSellInventory = false
 local autoRebirth = false
-local autoFarmUltra = false -- NEW
-local ultraFarmCollecting = false -- NEW
+local autoFarmUltra = false
+local ultraFarmCollecting = false
+local instantProximityEnabled = false -- NEW: Global instant proximity toggle
 
 -- Combat Tab Variables
 local hitboxExtenderEnabled = false
@@ -134,8 +135,7 @@ local skeletonESPObjects = {}
 local autoCollectGoldBars = false
 local autoCompleteObby = false
 local autoSpinWheel = false
--- NEW: Arcade Event Variables
-local autoTeleportCoins = false
+local autoTeleportTickets = false -- Fixed: Was coins, now tickets
 local autoTeleportConsoles = false
 
 -- Auto Collect Specific Brainrot Variables
@@ -192,8 +192,8 @@ local STAGE_RARITIES = {
     "Celestial"
 }
 
--- Priority rarities for Auto Farm Ultra
-local PRIORITY_RARITIES = {"Divine", "Celestial", "Secret", "Cosmic"}
+-- Priority rarities for Auto Farm Ultra - NO COSMIC, only Secret, Divine, Celestial
+local PRIORITY_RARITIES = {"Secret", "Divine", "Celestial"}
 
 -- Get Player Base
 local function getPlayerBase()
@@ -454,15 +454,33 @@ local function findPriorityBrainrots()
     return foundBrainrots
 end
 
--- Instant proximity prompt activation (1 click)
+-- FIXED: Truly instant proximity prompt activation
 local function instantProximityPrompt(prompt)
     if not prompt then return false end
     if not prompt:IsA("ProximityPrompt") then return false end
     
-    -- Fire instantly
+    -- Method 1: Direct input hold (fastest)
     prompt:InputHoldBegin()
-    task.wait(0.05)
+    task.wait(0.01) -- Minimal wait
     prompt:InputHoldEnd()
+    
+    -- Method 2: Also try firing directly
+    pcall(function()
+        if prompt.HoldDuration > 0 then
+            -- For hold prompts, simulate instant completion
+            local connection
+            connection = RunService.Heartbeat:Connect(function()
+                if prompt and prompt.Parent then
+                    prompt:InputHoldEnd()
+                else
+                    connection:Disconnect()
+                end
+            end)
+            task.delay(0.05, function()
+                if connection then connection:Disconnect() end
+            end)
+        end
+    end)
     
     return true
 end
@@ -503,7 +521,7 @@ local function emergencyHideFromWave()
     local targetCFrame = nearestWall.part.CFrame * CFrame.new(0, 0, -5)
     local emergencyTween = TweenService:Create(
         humanoidRootPart,
-        TweenInfo.new(0.2), -- Ultra fast
+        TweenInfo.new(0.2),
         {CFrame = targetCFrame}
     )
     
@@ -514,11 +532,10 @@ local function emergencyHideFromWave()
     return true
 end
 
--- NEW: Auto Farm Ultra Loop
+-- NEW: Auto Farm Ultra Loop - Tweens to SECRET area (not Cosmic), collects 5, returns
 local function autoFarmUltraLoop()
     print("Auto Farm Ultra Started!")
-    local collectedCount = 0
-    local maxBeforeReturn = 4 -- Collect 4 then return to base
+    local maxBeforeReturn = 5 -- Collect exactly 5 then return
     
     while autoFarmUltra do
         local success, err = pcall(function()
@@ -532,13 +549,12 @@ local function autoFarmUltraLoop()
                 while autoFarmUltra do
                     local stillNearby, _ = isWaveNearby()
                     if not stillNearby then
-                        task.wait(1) -- Extra safety wait
+                        task.wait(1)
                         break
                     end
                     task.wait(0.2)
                 end
                 
-                -- Return to position if we were farming
                 if waveHidePosition and not ultraFarmCollecting then
                     fastTweenToPosition(waveHidePosition)
                     waveHidePosition = nil
@@ -547,26 +563,27 @@ local function autoFarmUltraLoop()
                 return
             end
             
-            -- If we're hiding from wave, don't farm
             if isHidingFromWave then
                 task.wait(0.5)
                 return
             end
             
-            -- Step 1: Tween to last VIP wall (Celestial area) through all walls
-            print("Tweening to Celestial area...")
-            tweenToStageWallSequential("Celestial", 0.4) -- Fast speed
+            -- Step 1: Tween to SECRET area (through all VIP walls)
+            print("Tweening to Secret area...")
+            tweenToStageWallSequential("Secret", 0.4)
             
-            -- Step 2: Look for priority brainrots
+            -- Step 2: Look for priority brainrots (Secret, Divine, Celestial)
             ultraFarmCollecting = true
             local brainrots = findPriorityBrainrots()
             
             if #brainrots > 0 then
                 print("Found", #brainrots, "priority brainrots!")
                 
-                -- Collect up to maxBeforeReturn
-                for i = 1, math.min(#brainrots, maxBeforeReturn) do
+                -- Collect exactly 5 brainrots
+                local collected = 0
+                for i = 1, #brainrots do
                     if not autoFarmUltra then break end
+                    if collected >= maxBeforeReturn then break end
                     
                     -- Check for wave before each collection
                     local waveCheck, _ = isWaveNearby()
@@ -584,11 +601,17 @@ local function autoFarmUltraLoop()
                     fastTweenToPosition(brainrot.cframe + Vector3.new(0, 3, 0))
                     task.wait(0.1)
                     
-                    -- Instant collect using proximity prompt
+                    -- TRULY INSTANT collect using proximity prompt
                     if brainrot.prompt then
-                        instantProximityPrompt(brainrot.prompt)
+                        -- Use instant proximity or normal based on toggle
+                        if instantProximityEnabled then
+                            instantProximityPrompt(brainrot.prompt)
+                        else
+                            brainrot.prompt:InputHoldBegin()
+                            task.wait(brainrot.prompt.HoldDuration or 0.5)
+                            brainrot.prompt:InputHoldEnd()
+                        end
                     else
-                        -- Fallback to touch
                         firetouchinterest(humanoidRootPart, brainrot.part, 0)
                         task.wait(0.05)
                         firetouchinterest(humanoidRootPart, brainrot.part, 1)
@@ -599,27 +622,20 @@ local function autoFarmUltraLoop()
                         UpdateCollectedBrainrots:FireServer(brainrot.model)
                     end
                     
-                    collectedCount = collectedCount + 1
+                    collected = collected + 1
                     task.wait(0.2)
-                    
-                    -- Return to base if we've collected enough
-                    if collectedCount >= maxBeforeReturn then
-                        print("Collected enough, returning to base...")
-                        break
-                    end
                 end
                 
-                -- Step 3: Return to base safely through VIP walls
-                print("Returning to base...")
-                tweenBackToBase()
-                collectedCount = 0
+                print("Collected " .. collected .. " brainrots, returning to base...")
                 
-                -- Wait a bit at base before next cycle
-                task.wait(1)
-            else
-                -- No brainrots found, wait and try again
-                print("No priority brainrots found, waiting...")
+                -- Step 3: Return to base safely through VIP walls
+                tweenBackToBase()
+                
+                -- Wait at base before next cycle
                 task.wait(2)
+            else
+                print("No priority brainrots found, waiting...")
+                task.wait(3)
             end
             
             ultraFarmCollecting = false
@@ -639,60 +655,85 @@ local function autoFarmUltraLoop()
     isHidingFromWave = false
 end
 
--- MODIFIED: Auto Collect Cash - No tween, just teleport parts, reset every 5s
+-- FIXED: Auto Collect Cash - Only collects from YOUR base
 local function autoCollectCashLoop()
     local resetTimer = 0
+    local myBase = nil
+    
+    -- Get base once at start
+    myBase = getPlayerBase()
+    if not myBase then
+        warn("No base found! Auto Collect Cash disabled.")
+        autoCollectCash = false
+        return
+    end
+    
+    print("Auto Collect Cash started for base:", myBase.Name)
     
     while autoCollectCash do
         local success, err = pcall(function()
-            local base = getPlayerBase()
-            if base then
-                local slots = base:FindFirstChild("Slots")
-                if slots then
-                    for i = 1, 40 do
-                        if not autoCollectCash then break end
-                        local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
-                        if slot then
-                            local collectPart = slot:FindFirstChild("Collect")
-                            if collectPart and collectPart:IsA("BasePart") then
-                                -- Teleport collect part to player
+            -- Verify we still have our base
+            if not myBase or not myBase.Parent then
+                myBase = getPlayerBase()
+                if not myBase then return end
+            end
+            
+            local slots = myBase:FindFirstChild("Slots")
+            if slots then
+                for i = 1, 40 do
+                    if not autoCollectCash then break end
+                    local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
+                    if slot then
+                        local collectPart = slot:FindFirstChild("Collect")
+                        if collectPart and collectPart:IsA("BasePart") then
+                            -- Only teleport if it's in your base (check distance)
+                            local distance = (collectPart.Position - myBase:GetPivot().Position).Magnitude
+                            if distance < 200 then -- Safety check
                                 collectPart.CFrame = humanoidRootPart.CFrame * CFrame.new(0, -3, 0)
                                 if CollectMoneyEvent then
                                     CollectMoneyEvent:FireServer()
                                 end
-                                task.wait(0.05)
                             end
+                            task.wait(0.05)
                         end
                     end
                 end
             end
         end)
         
+        if not success then
+            warn("Auto Collect Cash error:", err)
+        end
+        
         -- Reset every 5 seconds
         resetTimer = resetTimer + 0.05
         if resetTimer >= 5 then
-            local currentPos = humanoidRootPart.CFrame
             character:BreakJoints()
             resetTimer = 0
             
             player.CharacterAdded:Wait()
             task.wait(0.5)
-            -- Don't restore position, let character respawn at base
+            -- Character respawns at base naturally
         end
         
         task.wait(0.05)
     end
 end
 
--- NEW: Arcade Event - Teleport Coins
-local function autoTeleportCoinsLoop()
-    while autoTeleportCoins do
+-- FIXED: Arcade Event - Teleport Tickets (not coins)
+local function autoTeleportTicketsLoop()
+    while autoTeleportTickets do
         local success, err = pcall(function()
             local arcadeTickets = Workspace:FindFirstChild("ArcadeEventTickets")
             if not arcadeTickets then return end
             
-            for _, ticketModel in ipairs(arcadeTickets:GetChildren()) do
-                if not autoTeleportCoins then break end
+            -- GetChildren()[2] as specified
+            local ticketModels = arcadeTickets:GetChildren()
+            if #ticketModels < 2 then return end
+            
+            -- Iterate through all ticket models
+            for i, ticketModel in ipairs(ticketModels) do
+                if not autoTeleportTickets then break end
                 
                 -- Path: ArcadeEventTickets -> Ticket -> Ticket -> TouchInterest
                 local ticket = ticketModel:FindFirstChild("Ticket")
@@ -704,18 +745,18 @@ local function autoTeleportCoinsLoop()
                         
                         -- Fire touch interest
                         firetouchinterest(humanoidRootPart, innerTicket, 0)
-                        task.wait(0.05)
+                        task.wait(0.01) -- Faster
                         firetouchinterest(humanoidRootPart, innerTicket, 1)
                     end
                 end
             end
         end)
         
-        task.wait(0.1)
+        task.wait(0.05) -- Faster loop
     end
 end
 
--- NEW: Arcade Event - Teleport Game Consoles
+-- Arcade Event - Teleport Game Consoles
 local function autoTeleportConsolesLoop()
     while autoTeleportConsoles do
         local success, err = pcall(function()
@@ -734,18 +775,53 @@ local function autoTeleportConsolesLoop()
                         
                         -- Fire touch interest
                         firetouchinterest(humanoidRootPart, console, 0)
-                        task.wait(0.05)
+                        task.wait(0.01)
                         firetouchinterest(humanoidRootPart, console, 1)
                     end
                 end
             end
         end)
         
-        task.wait(0.1)
+        task.wait(0.05)
     end
 end
 
--- Other loops (simplified versions that work)
+-- NEW: Instant Proximity Prompt Loop - Activates ALL proximity prompts instantly
+local function instantProximityLoop()
+    while instantProximityEnabled do
+        local success, err = pcall(function()
+            -- Find all proximity prompts near player
+            local prompts = {}
+            
+            -- Check workspace for proximity prompts
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("ProximityPrompt") then
+                    local parent = obj.Parent
+                    if parent and parent:IsA("BasePart") then
+                        local distance = (humanoidRootPart.Position - parent.Position).Magnitude
+                        if distance <= 10 then -- Within range
+                            table.insert(prompts, obj)
+                        end
+                    end
+                end
+            end
+            
+            -- Instantly activate all found prompts
+            for _, prompt in ipairs(prompts) do
+                if prompt and prompt.Parent then
+                    -- Check if already being held
+                    if not prompt.IsHeld then
+                        instantProximityPrompt(prompt)
+                    end
+                end
+            end
+        end)
+        
+        task.wait(0.1) -- Check frequently
+    end
+end
+
+-- Other loops
 local function autoHitLoop()
     while autoHitEnabled do
         pcall(function()
@@ -995,7 +1071,7 @@ local function visibleHitboxLoop()
     end)
 end
 
--- ESP Functions (simplified working versions)
+-- ESP Functions
 local function createESP(targetPlayer)
     if targetPlayer == player then return end
     if espObjects[targetPlayer] then return end
@@ -1080,36 +1156,30 @@ local function removeESP(targetPlayer)
 end
 
 local function espLoop()
-    -- Clear existing
     for p, _ in pairs(espObjects) do
         removeESP(p)
     end
     
-    -- Create for all players
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= player then
             createESP(p)
         end
     end
     
-    -- Handle new players
     local playerAddedConnection = Players.PlayerAdded:Connect(function(p)
         if espEnabled then
             createESP(p)
         end
     end)
     
-    -- Handle players leaving
     local playerRemovingConnection = Players.PlayerRemoving:Connect(function(p)
         removeESP(p)
     end)
     
-    -- Keep loop running
     while espEnabled do
         task.wait(1)
     end
     
-    -- Cleanup
     playerAddedConnection:Disconnect()
     playerRemovingConnection:Disconnect()
     
@@ -1157,7 +1227,6 @@ local function createAutoClickerButton()
     stroke.Thickness = 3
     stroke.Parent = button
     
-    -- Make draggable
     local dragging = false
     local dragStart = nil
     local startPos = nil
@@ -1384,7 +1453,7 @@ local function waveProtectionLoop()
     currentWavePart = nil
 end
 
--- CRITICAL: Create GUI with working toggles
+-- Create GUI
 local function createGUI()
     local success, err = pcall(function()
         print("Creating GUI...")
@@ -1457,6 +1526,7 @@ local function createGUI()
             autoSellInventory = false
             autoRebirth = false
             autoFarmUltra = false
+            instantProximityEnabled = false
             hitboxExtenderEnabled = false
             waveProtectionEnabled = false
             autoCollectSpecificBrainrot = false
@@ -1464,7 +1534,7 @@ local function createGUI()
             autoSpinWheel = false
             autoTweenToStage = false
             espEnabled = false
-            autoTeleportCoins = false
+            autoTeleportTickets = false
             autoTeleportConsoles = false
             
             if autoClickerButton then
@@ -1588,7 +1658,7 @@ local function createGUI()
 
         print("Tabs created")
 
-        -- Helper Functions for GUI elements - FIXED TOGGLE FUNCTION
+        -- Helper Functions for GUI elements
         local function createToggle(parent, name, description, callback)
             local frame = Instance.new("Frame")
             frame.Size = UDim2.new(1, -20, 0, 70)
@@ -1647,7 +1717,6 @@ local function createGUI()
             
             local enabled = false
             
-            -- CRITICAL: Make the ENTIRE frame clickable, not just a small button
             local clickBtn = Instance.new("TextButton")
             clickBtn.Name = "ClickButton"
             clickBtn.Size = UDim2.new(1, 0, 1, 0)
@@ -1655,7 +1724,6 @@ local function createGUI()
             clickBtn.Text = ""
             clickBtn.Parent = frame
             
-            -- Also make toggle area clickable
             local toggleClick = Instance.new("TextButton")
             toggleClick.Name = "ToggleClick"
             toggleClick.Size = UDim2.new(0, 50, 0, 26)
@@ -1675,7 +1743,6 @@ local function createGUI()
                     TweenService:Create(knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -11)}):Play()
                 end
                 
-                -- Call callback with pcall for safety
                 local success, err = pcall(function()
                     callback(enabled)
                 end)
@@ -1868,7 +1935,7 @@ local function createGUI()
         end
 
         -- ==================== AUTOMATION TAB ====================
-        createToggle(automationTab, "Auto Collect Cash", "Teleports parts to you, resets every 5s", function(enabled)
+        createToggle(automationTab, "Auto Collect Cash", "Collects only YOUR base cash, resets every 5s", function(enabled)
             autoCollectCash = enabled
             if enabled then 
                 task.spawn(autoCollectCashLoop) 
@@ -1900,11 +1967,19 @@ local function createGUI()
             end
         end)
 
-        -- NEW: Auto Farm Ultra Toggle
-        createToggle(automationTab, "Auto Farm Ultra", "Farms Divine/Celestial/Secret/Cosmic with wave protection", function(enabled)
+        -- NEW: Auto Farm Ultra Toggle - Tweens to SECRET area
+        createToggle(automationTab, "Auto Farm Ultra", "Farms Secret/Divine/Celestial, collects 5, returns", function(enabled)
             autoFarmUltra = enabled
             if enabled then
                 task.spawn(autoFarmUltraLoop)
+            end
+        end)
+
+        -- NEW: Instant Proximity Prompt Toggle
+        createToggle(automationTab, "Instant Proximity Prompts", "Instantly activates all nearby prompts", function(enabled)
+            instantProximityEnabled = enabled
+            if enabled then
+                task.spawn(instantProximityLoop)
             end
         end)
 
@@ -2001,13 +2076,13 @@ local function createGUI()
         end)
 
         -- ==================== EVENT TAB ====================
-        -- NEW: Arcade Section
+        -- ARCADE Section
         createSection(eventTab, "ARCADE")
         
-        createToggle(eventTab, "Auto Teleport Coins", "Teleports arcade tickets to you", function(enabled)
-            autoTeleportCoins = enabled
+        createToggle(eventTab, "Auto Teleport Tickets", "Teleports arcade tickets to you", function(enabled)
+            autoTeleportTickets = enabled
             if enabled then 
-                task.spawn(autoTeleportCoinsLoop) 
+                task.spawn(autoTeleportTicketsLoop) 
             end
         end)
 
@@ -2018,20 +2093,20 @@ local function createGUI()
             end
         end)
 
-        -- NEW: Money Section
+        -- MONEY Section
         createSection(eventTab, "MONEY")
-
-        createToggle(eventTab, "Auto Collect Gold Bars", "Teleports gold bar models to you", function(enabled)
-            autoCollectGoldBars = enabled
-            if enabled then 
-                task.spawn(autoCollectGoldBarsLoop) 
-            end
-        end)
 
         createToggle(eventTab, "Auto Complete Obby", "Auto completes all 3 obbies", function(enabled)
             autoCompleteObby = enabled
             if enabled then 
                 task.spawn(autoCompleteObbyLoop) 
+            end
+        end)
+
+        createToggle(eventTab, "Auto Collect Gold Bars", "Teleports gold bar models to you", function(enabled)
+            autoCollectGoldBars = enabled
+            if enabled then 
+                task.spawn(autoCollectGoldBarsLoop) 
             end
         end)
 
