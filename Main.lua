@@ -1,6 +1,6 @@
 --[[
-    Nexus|Escape Tsunami for Brainrots - Complete Edition Fixed v6
-    Fixes: Sequential VIP Wall Tweening, Proximity Prompt Hold, Auto Upgrade Brainrot, Auto Clicker, Spawn Machine
+    Nexus|Escape Tsunami for Brainrots - Complete Edition Fixed v7
+    Fixes: Brainrot collection, Wave protection with VIP walls, Base Upgrade, Auto Clicker, ESP Skeleton, Spawn Machines
 ]]
 
 local Players = game:GetService("Players")
@@ -64,6 +64,8 @@ local SellToolFunction = getRemote(RemoteFunctions, "SellTool")
 local UpgradeBrainrotFunction = getRemote(RemoteFunctions, "UpgradeBrainrot")
 local RebirthFunction = getRemote(RemoteFunctions, "Rebirth")
 local UpdateCollectedBrainrots = getRemote(RemoteEvents, "UpdateCollectedBrainrots")
+-- FIXED: Base Upgrade Remote
+local UpgradeBaseFunction = getRemote(RemoteFunctions, "UpgradeBase")
 
 -- Configuration
 local CONFIG = {
@@ -106,6 +108,7 @@ local hitboxRange = 10
 local hitboxVisualPart = nil
 local espEnabled = false
 local espObjects = {}
+local skeletonESPObjects = {}
 
 -- Event Tab Variables
 local autoCollectGoldBars = false
@@ -119,15 +122,11 @@ local isCollectingBrainrot = false
 local positionBeforeCollecting = nil
 local brainrotDropdownOpen = false
 
--- Settings Tab Variables
-local autoGapEnabled = false
-local gapDetectionRange = 150
-local isInGap = false
-local currentGapTarget = nil
-local positionBeforeGap = nil
-local gapSafetyOffset = Vector3.new(0, -2, 0)
-local lastGapTime = 0
-local gapCooldown = 2
+-- NEW: Wave Protection Variables (using VIP walls instead of gaps)
+local waveProtectionEnabled = false
+local waveProtectionRange = 125 -- Between 100-150 as requested
+local isHidingFromWave = false
+local waveHidePosition = nil
 
 -- Auto Upgrade Selected Brainrot Variables
 local autoUpgradeSelectedBrainrot = false
@@ -135,14 +134,20 @@ local selectedBrainrotToUpgrade = nil
 local selectedBrainrotToUpgradeSlot = nil
 local brainrotUpgradeDropdownOpen = false
 
--- Auto Clicker Variables
+-- FIXED: Auto Clicker Variables - Draggable auto-clicking button
 local autoClickerEnabled = false
 local autoClickerCPS = 10
 local autoClickerButton = nil
 local autoClickerLoop = nil
 
--- Auto Spawn Machine Variables
+-- FIXED: Auto Spawn Machine Variables
 local autoSpawnMachine = false
+local spawnMachineTypes = {
+    "Spawn Machine",
+    "Fuse Machine", 
+    "Blackhole Spawn Machine",
+    "ATM Spawn Machine"
+}
 
 -- Stages Tab Variables
 local selectedStage = nil
@@ -182,6 +187,32 @@ local function getPlayerBase()
     local bases = Workspace:FindFirstChild("Bases")
     if not bases then return nil end
     
+    -- Find base that belongs to local player
+    for _, base in ipairs(bases:GetChildren()) do
+        if base:IsA("Model") or base:IsA("Folder") then
+            -- Check if this is our base by looking for owner attribute or proximity
+            local slots = base:FindFirstChild("Slots")
+            if slots then
+                -- Additional check: see if we can find a player-specific identifier
+                local ownerAttr = base:GetAttribute("Owner")
+                if ownerAttr == player.UserId or ownerAttr == player.Name then
+                    return base
+                end
+                
+                -- Fallback: check if base has our character's proximity
+                local targetPart = base:IsA("Model") and base.PrimaryPart or base:FindFirstChildWhichIsA("BasePart", true)
+                if targetPart then
+                    local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
+                    -- If we're very close to this base, it's probably ours
+                    if distance < 100 then
+                        return base
+                    end
+                end
+            end
+        end
+    end
+    
+    -- If no specific owner found, return the closest base
     local closestBase = nil
     local closestDistance = math.huge
     
@@ -383,7 +414,7 @@ local function getVIPWallForRarity(rarity)
     return nil
 end
 
--- NEW: Get all VIP walls in order from Common to target
+-- Get all VIP walls in order from Common to target
 local function getVIPWallsInOrder(targetRarity)
     local targetIndex = table.find(STAGE_RARITIES, targetRarity)
     if not targetIndex then
@@ -406,6 +437,38 @@ local function getVIPWallsInOrder(targetRarity)
     return walls
 end
 
+-- NEW: Get nearest VIP wall for wave protection
+local function getNearestVIPWall()
+    local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
+    if not defaultMap then return nil end
+    
+    local vipWalls = defaultMap:FindFirstChild("VIPWalls")
+    if not vipWalls then return nil end
+    
+    local nearestWall = nil
+    local nearestDist = math.huge
+    
+    for _, wall in ipairs(vipWalls:GetChildren()) do
+        if wall:IsA("BasePart") or wall:IsA("Model") then
+            local targetPart = wall:IsA("BasePart") and wall or wall.PrimaryPart or wall:FindFirstChildWhichIsA("BasePart")
+            if targetPart then
+                local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
+                if distance < nearestDist then
+                    nearestDist = distance
+                    nearestWall = {
+                        part = targetPart,
+                        model = wall:IsA("Model") and wall or nil,
+                        name = wall.Name,
+                        distance = distance
+                    }
+                end
+            end
+        end
+    end
+    
+    return nearestWall
+end
+
 -- Check if position is safe
 local function isPositionSafe(position)
     if position.Y < 10 then
@@ -414,68 +477,12 @@ local function isPositionSafe(position)
     return true, nil
 end
 
--- Safe tween with gap avoidance
+-- Safe tween to position
 local function safeTweenToPosition(targetPosition, targetCFrame, useGapIfNeeded)
     useGapIfNeeded = useGapIfNeeded ~= false
     
     local safeTargetPos = Vector3.new(targetPosition.X, math.max(targetPosition.Y, 15), targetPosition.Z)
     local safeTargetCFrame = CFrame.new(safeTargetPos) * (targetCFrame - targetCFrame.Position)
-    
-    local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
-    local shouldUseGap = false
-    
-    if activeTsunamis and useGapIfNeeded then
-        for _, wave in ipairs(activeTsunamis:GetChildren()) do
-            local wavePart = nil
-            if wave:IsA("BasePart") then
-                wavePart = wave
-            elseif wave:IsA("Model") then
-                wavePart = wave.PrimaryPart or wave:FindFirstChildWhichIsA("BasePart")
-            end
-            
-            if wavePart then
-                local distToWave = (humanoidRootPart.Position - wavePart.Position).Magnitude
-                local distToTarget = (safeTargetPos - wavePart.Position).Magnitude
-                
-                if distToWave < gapDetectionRange or distToTarget < gapDetectionRange then
-                    shouldUseGap = true
-                    break
-                end
-            end
-        end
-    end
-    
-    if shouldUseGap then
-        local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
-        if defaultMap then
-            local gapsFolder = defaultMap:FindFirstChild("Gaps")
-            if gapsFolder then
-                local bestGap = nil
-                local bestDist = math.huge
-                
-                for gapNum = 1, 9 do
-                    local gap = gapsFolder:FindFirstChild("Gap" .. gapNum)
-                    if gap then
-                        local mud = gap:FindFirstChild("Mud")
-                        if mud and mud:IsA("BasePart") then
-                            local dist = (humanoidRootPart.Position - mud.Position).Magnitude
-                            if dist < bestDist then
-                                bestDist = dist
-                                bestGap = mud
-                            end
-                        end
-                    end
-                end
-                
-                if bestGap then
-                    local gapTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = bestGap.CFrame + gapSafetyOffset})
-                    gapTween:Play()
-                    gapTween.Completed:Wait()
-                    task.wait(0.5)
-                end
-            end
-        end
-    end
     
     local finalTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.8), {CFrame = safeTargetCFrame})
     finalTween:Play()
@@ -484,7 +491,7 @@ local function safeTweenToPosition(targetPosition, targetCFrame, useGapIfNeeded)
     return true
 end
 
--- NEW: Sequential tween through all VIP walls up to target
+-- Sequential tween through all VIP walls up to target
 local function tweenToStageWallSequential(targetRarity)
     if not targetRarity then
         warn("No stage selected!")
@@ -589,35 +596,141 @@ local function autoTweenToStageLoop()
     print("Auto Tween to Stage stopped")
 end
 
--- NEW: Hold proximity prompt for specified duration
-local function holdProximityPrompt(prompt, duration)
+-- NEW: Wave Protection Loop - Uses VIP walls instead of gaps
+local function waveProtectionLoop()
+    print("Wave Protection (VIP Walls) started")
+    isHidingFromWave = false
+    waveHidePosition = nil
+    
+    while waveProtectionEnabled do
+        local success, err = pcall(function()
+            -- Check for active tsunamis/waves
+            local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
+            if not activeTsunamis then
+                -- No waves, return to normal if we were hiding
+                if isHidingFromWave and waveHidePosition then
+                    task.wait(1) -- Wait a bit to make sure wave is gone
+                    
+                    -- Return to previous position
+                    local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
+                    returnTween:Play()
+                    returnTween.Completed:Wait()
+                    
+                    isHidingFromWave = false
+                    waveHidePosition = nil
+                    print("Returned from VIP wall - wave gone")
+                end
+                return
+            end
+            
+            -- Find nearest wave
+            local nearestWave = nil
+            local nearestDist = math.huge
+            
+            for _, wave in ipairs(activeTsunamis:GetChildren()) do
+                local wavePart = nil
+                if wave:IsA("BasePart") then
+                    wavePart = wave
+                elseif wave:IsA("Model") then
+                    wavePart = wave.PrimaryPart or wave:FindFirstChildWhichIsA("BasePart")
+                end
+                
+                if wavePart then
+                    local distance = (humanoidRootPart.Position - wavePart.Position).Magnitude
+                    if distance < nearestDist then
+                        nearestDist = distance
+                        nearestWave = wavePart
+                    end
+                end
+            end
+            
+            -- If wave is between 100-150 studs, go to nearest VIP wall
+            if nearestWave and nearestDist >= 100 and nearestDist <= 150 then
+                if not isHidingFromWave then
+                    print("Wave detected at", nearestDist, "studs - moving to VIP wall!")
+                    
+                    -- Store position before hiding (unless we're collecting brainrots, safety first)
+                    if not isHidingFromWave then
+                        waveHidePosition = humanoidRootPart.CFrame
+                    end
+                    
+                    -- Cancel brainrot collection if active - SAFETY FIRST
+                    if isCollectingBrainrot then
+                        print("Cancelling brainrot collection - WAVE PRIORITY!")
+                        isCollectingBrainrot = false
+                    end
+                    
+                    -- Get nearest VIP wall
+                    local nearestWall = getNearestVIPWall()
+                    if nearestWall then
+                        isHidingFromWave = true
+                        
+                        -- Tween to wall immediately
+                        local targetCFrame = nearestWall.part.CFrame * CFrame.new(0, 0, -5)
+                        
+                        -- Fast tween for emergency
+                        local emergencyTween = TweenService:Create(
+                            humanoidRootPart,
+                            TweenInfo.new(0.5), -- Fast tween
+                            {CFrame = targetCFrame}
+                        )
+                        
+                        emergencyTween:Play()
+                        emergencyTween.Completed:Wait()
+                        
+                        print("Now hiding at VIP wall:", nearestWall.name)
+                    else
+                        warn("No VIP wall found for protection!")
+                    end
+                end
+            elseif nearestWave and nearestDist > 150 and isHidingFromWave then
+                -- Wave is far away now, return to position
+                if waveHidePosition then
+                    local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
+                    returnTween:Play()
+                    returnTween.Completed:Wait()
+                    
+                    isHidingFromWave = false
+                    waveHidePosition = nil
+                    print("Returned from VIP wall - wave far away")
+                end
+            end
+        end)
+        
+        if not success then
+            warn("Wave protection error:", err)
+        end
+        
+        task.wait(0.2) -- Check frequently
+    end
+    
+    -- Cleanup
+    if isHidingFromWave and waveHidePosition then
+        local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
+        returnTween:Play()
+    end
+    
+    isHidingFromWave = false
+    waveHidePosition = nil
+    print("Wave Protection stopped")
+end
+
+-- FIXED: Quick proximity prompt activation (no long hold)
+local function activateProximityPrompt(prompt)
     if not prompt then return false end
     if not prompt:IsA("ProximityPrompt") then return false end
     
-    duration = duration or 2.5
+    print("Activating proximity prompt instantly")
     
-    print("Holding proximity prompt for", duration, "seconds")
-    
-    -- Fire the prompt hold
+    -- Just fire it immediately without holding
     prompt:InputHoldBegin()
-    
-    -- Wait for the hold duration
-    local startTime = tick()
-    while tick() - startTime < duration do
-        -- Keep holding
-        if not prompt or not prompt.Parent then
-            print("Prompt disappeared during hold")
-            return false
-        end
-        task.wait(0.1)
-    end
-    
+    task.wait(0.1)
     prompt:InputHoldEnd()
-    print("Released proximity prompt")
+    
     return true
 end
 
--- Auto Collect Specific Brainrot Loop - WITH PROXIMITY PROMPT HOLD
+-- FIXED: Auto Collect Specific Brainrot Loop - NO DELAY, instant collection
 local function autoCollectSpecificBrainrotLoop()
     print("Auto Collect Specific Brainrot started for:", selectedBrainrotToCollect and selectedBrainrotToCollect.name or "None")
     
@@ -625,6 +738,13 @@ local function autoCollectSpecificBrainrotLoop()
         local success, err = pcall(function()
             if not selectedBrainrotToCollect then
                 task.wait(2)
+                return
+            end
+            
+            -- Check if we need to hide from wave first (SAFETY PRIORITY)
+            if isHidingFromWave then
+                print("Waiting for wave protection to finish...")
+                task.wait(1)
                 return
             end
             
@@ -636,29 +756,19 @@ local function autoCollectSpecificBrainrotLoop()
                 
                 -- Tween to brainrot
                 local targetCFrame = foundBrainrot.cframe + Vector3.new(0, 5, 0)
-                safeTweenToPosition(foundBrainrot.part.Position, targetCFrame, true)
+                safeTweenToPosition(foundBrainrot.part.Position, targetCFrame, false) -- Don't use gaps
                 
-                task.wait(0.5)
+                task.wait(0.3) -- Small wait to arrive
                 
-                -- NEW: Hold proximity prompt if found, otherwise use touch interest
+                -- FIXED: Quick activation, no 3-second hold
                 if foundBrainrot.prompt then
-                    print("Found proximity prompt, holding for 2.5 seconds...")
-                    holdProximityPrompt(foundBrainrot.prompt, 2.5)
+                    print("Activating proximity prompt instantly...")
+                    activateProximityPrompt(foundBrainrot.prompt)
                 else
                     -- Fallback to touch interest
-                    print("No proximity prompt found, using touch interest...")
                     firetouchinterest(humanoidRootPart, foundBrainrot.part, 0)
-                    task.wait(0.1)
+                    task.wait(0.05)
                     firetouchinterest(humanoidRootPart, foundBrainrot.part, 1)
-                    
-                    if foundBrainrot.brainrotModel then
-                        local brainrotPart = foundBrainrot.brainrotModel:FindFirstChildWhichIsA("BasePart")
-                        if brainrotPart then
-                            firetouchinterest(humanoidRootPart, brainrotPart, 0)
-                            task.wait(0.1)
-                            firetouchinterest(humanoidRootPart, brainrotPart, 1)
-                        end
-                    end
                 end
                 
                 -- Also try to fire the remote event if available
@@ -666,20 +776,20 @@ local function autoCollectSpecificBrainrotLoop()
                     UpdateCollectedBrainrots:FireServer(foundBrainrot.model)
                 end
                 
-                task.wait(1.5)
+                task.wait(0.5) -- Brief wait for collection to process
                 
                 -- Return to base
                 local base = getPlayerBase()
                 if base then
                     local basePart = base:FindFirstChildWhichIsA("BasePart", true)
                     if basePart then
-                        safeTweenToPosition(basePart.Position, basePart.CFrame + Vector3.new(0, 5, 0), true)
+                        safeTweenToPosition(basePart.Position, basePart.CFrame + Vector3.new(0, 5, 0), false)
                     end
                 end
                 
                 isCollectingBrainrot = false
                 positionBeforeCollecting = nil
-                task.wait(3)
+                task.wait(2) -- Wait before next collection
             else
                 task.wait(1)
             end
@@ -695,376 +805,6 @@ local function autoCollectSpecificBrainrotLoop()
     
     isCollectingBrainrot = false
     print("Auto Collect Specific Brainrot stopped")
-end
-
--- Smart Gap System
-local function smartGapLoop()
-    print("Smart Auto Gap started")
-    positionBeforeGap = nil
-    lastGapTime = 0
-    
-    while autoGapEnabled do
-        local success, err = pcall(function()
-            if isCollectingBrainrot or isTweeningToStage then
-                task.wait(0.5)
-                return
-            end
-            
-            local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
-            local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
-            
-            if not activeTsunamis or not defaultMap then 
-                if isInGap and positionBeforeGap then
-                    local timeSinceLastGap = tick() - lastGapTime
-                    if timeSinceLastGap > gapCooldown then
-                        local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = positionBeforeGap})
-                        returnTween:Play()
-                        returnTween.Completed:Wait()
-                        isInGap = false
-                        currentGapTarget = nil
-                        positionBeforeGap = nil
-                    end
-                end
-                return 
-            end
-            
-            local gapsFolder = defaultMap:FindFirstChild("Gaps")
-            if not gapsFolder then return end
-            
-            -- Find nearest wave and check if we need to go to gap
-            local nearestWave = nil
-            local nearestDist = math.huge
-            local waveApproaching = false
-            
-            for _, wave in ipairs(activeTsunamis:GetChildren()) do
-                local wavePart = nil
-                if wave:IsA("BasePart") then
-                    wavePart = wave
-                elseif wave:IsA("Model") then
-                    wavePart = wave.PrimaryPart or wave:FindFirstChildWhichIsA("BasePart")
-                end
-                
-                if wavePart then
-                    local distance = (humanoidRootPart.Position - wavePart.Position).Magnitude
-                    local velocity = wavePart.Velocity or Vector3.new(0, 0, 0)
-                    local isMovingTowards = (humanoidRootPart.Position - wavePart.Position):Dot(velocity) < 0
-                    
-                    if distance < nearestDist then
-                        nearestDist = distance
-                        nearestWave = wavePart
-                        waveApproaching = isMovingTowards
-                    end
-                end
-            end
-            
-            local shouldEnterGap = false
-            
-            if nearestWave then
-                if nearestDist < gapDetectionRange and waveApproaching then
-                    shouldEnterGap = true
-                end
-                if nearestDist < 40 then
-                    shouldEnterGap = true
-                end
-            end
-            
-            if humanoidRootPart.Position.Y < 10 then
-                shouldEnterGap = true
-            end
-            
-            if shouldEnterGap and not isInGap then
-                local timeSinceLastGap = tick() - lastGapTime
-                if timeSinceLastGap < gapCooldown then
-                    return
-                end
-                
-                if not positionBeforeGap then
-                    positionBeforeGap = humanoidRootPart.CFrame
-                    lastGapTime = tick()
-                end
-                
-                local bestGap = nil
-                local bestScore = -math.huge
-                
-                for gapNum = 1, 9 do
-                    local gap = gapsFolder:FindFirstChild("Gap" .. gapNum)
-                    if gap then
-                        local mud = gap:FindFirstChild("Mud")
-                        if mud and mud:IsA("BasePart") then
-                            local distToUs = (humanoidRootPart.Position - mud.Position).Magnitude
-                            local distFromWave = nearestWave and (mud.Position - nearestWave.Position).Magnitude or 999
-                            
-                            local score = (distFromWave * 2) - (distToUs * 0.5)
-                            
-                            if score > bestScore then
-                                bestScore = score
-                                bestGap = mud
-                            end
-                        end
-                    end
-                end
-                
-                if bestGap then
-                    currentGapTarget = bestGap
-                    isInGap = true
-                    
-                    local targetCFrame = bestGap.CFrame + gapSafetyOffset
-                    local currentDist = (humanoidRootPart.Position - bestGap.Position).Magnitude
-                    
-                    if currentDist > 5 then
-                        local downTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.4), {CFrame = targetCFrame})
-                        downTween:Play()
-                    else
-                        humanoidRootPart.CFrame = targetCFrame
-                    end
-                end
-                
-            elseif not shouldEnterGap and isInGap then
-                local timeInGap = tick() - lastGapTime
-                
-                if timeInGap > 1 and (not nearestWave or nearestDist > gapDetectionRange * 1.2) then
-                    if positionBeforeGap then
-                        local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.8), {CFrame = positionBeforeGap})
-                        returnTween:Play()
-                        returnTween.Completed:Wait()
-                        
-                        isInGap = false
-                        currentGapTarget = nil
-                        positionBeforeGap = nil
-                    end
-                end
-            end
-            
-            if isInGap and currentGapTarget then
-                humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
-                if tick() % 0.5 < 0.1 then
-                    humanoidRootPart.CFrame = currentGapTarget.CFrame + gapSafetyOffset
-                end
-            end
-        end)
-        
-        if not success then
-            warn("Smart gap error:", err)
-        end
-        
-        task.wait(0.1)
-    end
-    
-    if isInGap and positionBeforeGap then
-        local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = positionBeforeGap})
-        returnTween:Play()
-    end
-    
-    isInGap = false
-    currentGapTarget = nil
-    positionBeforeGap = nil
-end
-
--- VISIBLE HITBOX
-local visibleHitboxParts = {}
-
-local function visibleHitboxLoop()
-    while hitboxExtenderEnabled do
-        local success, err = pcall(function()
-            for _, targetPlayer in ipairs(Players:GetPlayers()) do
-                if targetPlayer ~= player and targetPlayer.Character then
-                    local targetChar = targetPlayer.Character
-                    local head = targetChar:FindFirstChild("Head")
-                    local hrp = targetChar:FindFirstChild("HumanoidRootPart")
-                    
-                    if head then
-                        if not head:GetAttribute("OriginalSize") then
-                            head:SetAttribute("OriginalSize", head.Size)
-                            head:SetAttribute("OriginalTransparency", head.Transparency)
-                        end
-                        
-                        head.Size = Vector3.new(hitboxRange, hitboxRange, hitboxRange)
-                        head.Transparency = 0.3
-                        head.Color = Color3.fromRGB(255, 0, 0)
-                        head.Material = Enum.Material.Neon
-                        
-                        if not visibleHitboxParts[targetPlayer] then
-                            visibleHitboxParts[targetPlayer] = {}
-                        end
-                        visibleHitboxParts[targetPlayer].Head = head
-                    end
-                    
-                    if hrp then
-                        if not hrp:GetAttribute("OriginalSize") then
-                            hrp:SetAttribute("OriginalSize", hrp.Size)
-                        end
-                        hrp.Size = Vector3.new(hitboxRange * 0.5, hitboxRange * 0.5, hitboxRange * 0.5)
-                        visibleHitboxParts[targetPlayer].HRP = hrp
-                    end
-                    
-                    for _, part in ipairs(targetChar:GetDescendants()) do
-                        if part:IsA("BasePart") and part.Name ~= "Head" and part.Name ~= "HumanoidRootPart" then
-                            if not part:GetAttribute("OriginalSize") then
-                                part:SetAttribute("OriginalSize", part.Size)
-                            end
-                            part.Size = part:GetAttribute("OriginalSize") * 1.5
-                        end
-                    end
-                end
-            end
-        end)
-        
-        task.wait(0.5)
-    end
-    
-    pcall(function()
-        for targetPlayer, parts in pairs(visibleHitboxParts) do
-            if targetPlayer.Character then
-                for partName, part in pairs(parts) do
-                    if part and part.Parent then
-                        part.Size = part:GetAttribute("OriginalSize") or part.Size
-                        if partName == "Head" then
-                            part.Transparency = part:GetAttribute("OriginalTransparency") or 0
-                            part.Color = Color3.fromRGB(255, 255, 255)
-                            part.Material = Enum.Material.Plastic
-                        end
-                    end
-                end
-            end
-        end
-        visibleHitboxParts = {}
-    end)
-end
-
--- ESP SYSTEM
-local function createESP(targetPlayer)
-    if targetPlayer == player then return end
-    if espObjects[targetPlayer] then return end
-    
-    local espFolder = Instance.new("Folder")
-    espFolder.Name = targetPlayer.Name .. "_ESP"
-    espFolder.Parent = playerGui
-    
-    local function onCharacterAdded(char)
-        task.wait(1)
-        
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        local head = char:FindFirstChild("Head")
-        local humanoid = char:FindFirstChild("Humanoid")
-        
-        if not hrp or not head then return end
-        
-        local box = Instance.new("BoxHandleAdornment")
-        box.Name = "ESPBox"
-        box.Size = hrp.Size + Vector3.new(2, 3, 2)
-        box.Color3 = CONFIG.COLORS.ESP
-        box.Transparency = 0.5
-        box.ZIndex = 10
-        box.AlwaysOnTop = true
-        box.Adornee = hrp
-        box.Parent = espFolder
-        
-        local billboard = Instance.new("BillboardGui")
-        billboard.Name = "ESPName"
-        billboard.Size = UDim2.new(0, 200, 0, 50)
-        billboard.StudsOffset = Vector3.new(0, 3, 0)
-        billboard.AlwaysOnTop = true
-        billboard.Adornee = head
-        billboard.Parent = espFolder
-        
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Size = UDim2.new(1, 0, 1, 0)
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.Text = targetPlayer.Name
-        nameLabel.TextColor3 = CONFIG.COLORS.ESP
-        nameLabel.TextStrokeTransparency = 0
-        nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-        nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.TextSize = 14
-        nameLabel.Parent = billboard
-        
-        if humanoid then
-            local healthLabel = Instance.new("TextLabel")
-            healthLabel.Name = "ESPHealth"
-            healthLabel.Size = UDim2.new(1, 0, 0.5, 0)
-            healthLabel.Position = UDim2.new(0, 0, 0.5, 0)
-            healthLabel.BackgroundTransparency = 1
-            healthLabel.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
-            healthLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-            healthLabel.TextStrokeTransparency = 0
-            healthLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-            healthLabel.Font = Enum.Font.GothamBold
-            healthLabel.TextSize = 12
-            healthLabel.Parent = billboard
-            
-            humanoid.HealthChanged:Connect(function()
-                if healthLabel and healthLabel.Parent then
-                    healthLabel.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
-                end
-            end)
-        end
-        
-        local tracer = Instance.new("Frame")
-        tracer.Name = "ESPTracer"
-        tracer.BackgroundColor3 = CONFIG.COLORS.ESP
-        tracer.BorderSizePixel = 0
-        tracer.Size = UDim2.new(0, 2, 0, 2)
-        tracer.Parent = espFolder
-        
-        RunService.RenderStepped:Connect(function()
-            if not espEnabled or not tracer.Parent then return end
-            if not targetPlayer.Character or not hrp.Parent then return end
-            
-            local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-            if onScreen then
-                local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                local target = Vector2.new(screenPos.X, screenPos.Y)
-                local distance = (center - target).Magnitude
-                
-                tracer.Visible = true
-                tracer.Size = UDim2.new(0, distance, 0, 2)
-                tracer.Position = UDim2.new(0, math.min(center.X, target.X), 0, math.min(center.Y, target.Y))
-                tracer.Rotation = math.deg(math.atan2(target.Y - center.Y, target.X - center.X))
-            else
-                tracer.Visible = false
-            end
-        end)
-    end
-    
-    if targetPlayer.Character then
-        onCharacterAdded(targetPlayer.Character)
-    end
-    
-    targetPlayer.CharacterAdded:Connect(onCharacterAdded)
-    espObjects[targetPlayer] = espFolder
-end
-
-local function removeESP(targetPlayer)
-    if espObjects[targetPlayer] then
-        espObjects[targetPlayer]:Destroy()
-        espObjects[targetPlayer] = nil
-    end
-end
-
-local function espLoop()
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player then
-            createESP(p)
-        end
-    end
-    
-    Players.PlayerAdded:Connect(function(p)
-        if espEnabled then
-            createESP(p)
-        end
-    end)
-    
-    Players.PlayerRemoving:Connect(function(p)
-        removeESP(p)
-    end)
-    
-    while espEnabled do
-        task.wait(1)
-    end
-    
-    for p, _ in pairs(espObjects) do
-        removeESP(p)
-    end
 end
 
 -- Auto functions
@@ -1115,60 +855,46 @@ local function autoHitLoop()
     end
 end
 
--- Auto Upgrade Base using SurfaceGui button
+-- FIXED: Auto Upgrade Base - Uses correct path and remote
 local function autoUpgradeBaseLoop()
+    print("Auto Upgrade Base started")
+    
     while autoUpgradeBase do
         local success, err = pcall(function()
+            -- Method 1: Try to use the RemoteFunction directly
+            if UpgradeBaseFunction then
+                print("Firing UpgradeBase remote...")
+                UpgradeBaseFunction:InvokeServer()
+            end
+            
+            -- Method 2: Try to find and click the button in our base
             local base = getPlayerBase()
-            if not base then return end
-            
-            local upgradeBaseModel = base:FindFirstChild("UpgradeBase") or base:FindFirstChild("Upgrade") or base:FindFirstChild("BaseUpgrade")
-            
-            if upgradeBaseModel then
-                local sign = upgradeBaseModel:FindFirstChild("Sign")
-                if sign then
-                    local surfaceGui = sign:FindFirstChild("SurfaceGui")
-                    if surfaceGui then
-                        local button = surfaceGui:FindFirstChild("Button")
-                        if button and (button:IsA("ImageButton") or button:IsA("TextButton")) then
-                            button.MouseButton1Click:Fire()
-                        else
-                            for _, child in ipairs(surfaceGui:GetDescendants()) do
-                                if child:IsA("ImageButton") or child:IsA("TextButton") then
-                                    child.MouseButton1Click:Fire()
-                                    break
-                                end
+            if base then
+                local upgradeBaseModel = base:FindFirstChild("UpgradeBase")
+                if upgradeBaseModel then
+                    local sign = upgradeBaseModel:FindFirstChild("Sign")
+                    if sign then
+                        local surfaceGui = sign:FindFirstChild("SurfaceGui")
+                        if surfaceGui then
+                            local button = surfaceGui:FindFirstChild("Button")
+                            if button and (button:IsA("ImageButton") or button:IsA("TextButton")) then
+                                print("Clicking base upgrade button...")
+                                button.MouseButton1Click:Fire()
                             end
-                        end
-                    else
-                        for _, child in ipairs(sign:GetDescendants()) do
-                            if child:IsA("SurfaceGui") then
-                                for _, btn in ipairs(child:GetDescendants()) do
-                                    if btn:IsA("ImageButton") or btn:IsA("TextButton") then
-                                        btn.MouseButton1Click:Fire()
-                                        break
-                                    end
-                                end
-                                break
-                            end
-                        end
-                    end
-                else
-                    for _, child in ipairs(upgradeBaseModel:GetDescendants()) do
-                        if child:IsA("ClickDetector") then
-                            fireclickdetector(child)
-                            break
-                        elseif child:IsA("ProximityPrompt") then
-                            fireproximityprompt(child)
-                            break
                         end
                     end
                 end
             end
         end)
         
+        if not success then
+            warn("Auto upgrade base error:", err)
+        end
+        
         task.wait(2)
     end
+    
+    print("Auto Upgrade Base stopped")
 end
 
 local function autoCollectCashLoop()
@@ -1314,7 +1040,7 @@ local function autoSpinWheelLoop()
     print("Auto Spin Wheel stopped")
 end
 
--- FIXED: Auto Spawn Machine Loop - Better detection and triggering
+-- FIXED: Auto Spawn Machine - Detects different machine types and interacts properly
 local function autoSpawnMachineLoop()
     print("Auto Spawn Machine started")
     
@@ -1323,34 +1049,26 @@ local function autoSpawnMachineLoop()
             -- Look for spawn machines with multiple detection methods
             local spawnMachines = {}
             
-            -- Method 1: Direct workspace descendants
+            -- Method 1: Direct workspace descendants by name patterns
             for _, obj in ipairs(Workspace:GetDescendants()) do
                 if obj:IsA("Model") then
                     local name = obj.Name:lower()
-                    if name:find("spawn") and (name:find("machine") or name:find("insert")) then
+                    -- Check for all machine types
+                    if (name:find("spawn") and (name:find("machine") or name:find("insert"))) or
+                       name:find("fuse") or
+                       name:find("blackhole") or
+                       name:find("atm") then
                         table.insert(spawnMachines, obj)
                     end
                 end
             end
             
             -- Method 2: CollectionService tags
-            for _, tag in ipairs({"SpawnMachine", "Spawn", "InsertMachine", "BrainrotMachine"}) do
+            local machineTags = {"SpawnMachine", "Spawn", "InsertMachine", "BrainrotMachine", "FuseMachine", "BlackholeMachine", "ATMMachine"}
+            for _, tag in ipairs(machineTags) do
                 for _, obj in ipairs(CollectionService:GetTagged(tag)) do
                     if obj:IsDescendantOf(Workspace) then
                         table.insert(spawnMachines, obj)
-                    end
-                end
-            end
-            
-            -- Method 3: Look for proximity prompts with "Insert" or "Spawn" text
-            for _, prompt in ipairs(Workspace:GetDescendants()) do
-                if prompt:IsA("ProximityPrompt") then
-                    local actionText = prompt.ActionText:lower()
-                    if actionText:find("insert") or actionText:find("spawn") or actionText:find("machine") then
-                        local parentModel = prompt:FindFirstAncestorWhichIsA("Model")
-                        if parentModel then
-                            table.insert(spawnMachines, parentModel)
-                        end
                     end
                 end
             end
@@ -1370,43 +1088,58 @@ local function autoSpawnMachineLoop()
                 
                 -- Get machine position
                 local machinePos = nil
+                local machineCFrame = nil
                 if machine:IsA("Model") then
                     if machine.PrimaryPart then
                         machinePos = machine.PrimaryPart.Position
+                        machineCFrame = machine.PrimaryPart.CFrame
                     else
                         local part = machine:FindFirstChildWhichIsA("BasePart")
                         if part then
                             machinePos = part.Position
+                            machineCFrame = part.CFrame
                         end
                     end
                 elseif machine:IsA("BasePart") then
                     machinePos = machine.Position
+                    machineCFrame = machine.CFrame
                 end
                 
-                if machinePos then
+                if machinePos and machineCFrame then
                     local distance = (humanoidRootPart.Position - machinePos).Magnitude
                     
-                    -- If close enough, interact with all prompts and click detectors
-                    if distance < 20 then
-                        print("Near spawn machine:", machine.Name, "Distance:", distance)
+                    -- If close enough, interact with all prompts
+                    if distance < 25 then
+                        print("Near machine:", machine.Name, "Distance:", distance)
                         
-                        -- Look for and fire proximity prompts
+                        -- Tween closer if needed (5 studs in front)
+                        if distance > 8 then
+                            local targetCFrame = machineCFrame * CFrame.new(0, 0, -5)
+                            local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = targetCFrame})
+                            tween:Play()
+                            tween.Completed:Wait()
+                            task.wait(0.3)
+                        end
+                        
+                        -- Look for and activate proximity prompts
                         for _, prompt in ipairs(machine:GetDescendants()) do
                             if prompt:IsA("ProximityPrompt") then
                                 local actionText = prompt.ActionText:lower()
-                                if actionText:find("insert") or actionText:find("spawn") or actionText:find("use") or prompt.Enabled then
-                                    print("Firing proximity prompt:", prompt.ActionText)
+                                if actionText:find("insert") or actionText:find("spawn") or actionText:find("use") or actionText:find("fuse") or prompt.Enabled then
+                                    print("Activating prompt:", prompt.ActionText)
                                     
-                                    -- Move closer if needed
-                                    if distance > prompt.MaxActivationDistance then
-                                        local targetPos = machinePos + (humanoidRootPart.Position - machinePos).Unit * (prompt.MaxActivationDistance - 1)
+                                    -- Move to activation distance if needed
+                                    local currentDist = (humanoidRootPart.Position - prompt.Parent.Position).Magnitude
+                                    if currentDist > prompt.MaxActivationDistance then
+                                        local direction = (humanoidRootPart.Position - prompt.Parent.Position).Unit
+                                        local targetPos = prompt.Parent.Position + direction * (prompt.MaxActivationDistance - 1)
                                         humanoidRootPart.CFrame = CFrame.new(targetPos)
                                         task.wait(0.2)
                                     end
                                     
-                                    -- Hold the prompt for 2 seconds
+                                    -- Activate the prompt
                                     prompt:InputHoldBegin()
-                                    task.wait(2)
+                                    task.wait(2) -- Hold for 2 seconds as requested
                                     prompt:InputHoldEnd()
                                     
                                     task.wait(0.5)
@@ -1414,21 +1147,12 @@ local function autoSpawnMachineLoop()
                             end
                         end
                         
-                        -- Look for click detectors
+                        -- Also try click detectors
                         for _, clicker in ipairs(machine:GetDescendants()) do
                             if clicker:IsA("ClickDetector") then
-                                print("Clicking spawn machine detector")
+                                print("Clicking machine detector")
                                 fireclickdetector(clicker)
                                 task.wait(0.5)
-                            end
-                        end
-                        
-                        -- Look for touch interest parts
-                        for _, part in ipairs(machine:GetDescendants()) do
-                            if part:IsA("BasePart") and part.Name:lower():find("touch") then
-                                firetouchinterest(humanoidRootPart, part, 0)
-                                task.wait(0.1)
-                                firetouchinterest(humanoidRootPart, part, 1)
                             end
                         end
                     end
@@ -1501,11 +1225,10 @@ local function autoUpgradeBrainrotLoop()
     end
 end
 
--- FIXED: Auto Upgrade Selected Brainrot Loop - Scans base and displays info
+-- Auto Upgrade Selected Brainrot Loop
 local function autoUpgradeSelectedBrainrotLoop()
     print("Auto Upgrade Selected Brainrot started")
     
-    -- First, scan base to find the brainrot
     local base = getPlayerBase()
     if not base then
         warn("No base found!")
@@ -1545,13 +1268,11 @@ local function autoUpgradeSelectedBrainrotLoop()
         return
     end
     
-    -- Store the found info
     selectedBrainrotToUpgrade = {name = foundName, slot = foundSlot}
     selectedBrainrotToUpgradeSlot = foundSlot
     
     print(string.format("Starting auto upgrade for %s (Slot %d)", foundName, foundSlot))
     
-    -- Upgrade loop
     while autoUpgradeSelectedBrainrot do
         local success, err = pcall(function()
             if UpgradeBrainrotFunction and selectedBrainrotToUpgradeSlot then
@@ -1605,7 +1326,7 @@ local function autoCompleteObbyLoop()
     end
 end
 
--- FIXED: Auto Clicker - Using VirtualInputManager for better compatibility
+-- FIXED: Auto Clicker - Draggable button that auto-clicks continuously
 local function createAutoClickerButton()
     if autoClickerButton then
         autoClickerButton:Destroy()
@@ -1624,11 +1345,11 @@ local function createAutoClickerButton()
     
     local button = Instance.new("TextButton")
     button.Name = "AutoClickerButton"
-    button.Size = UDim2.new(0, 80, 0, 80)
+    button.Size = UDim2.new(0, 100, 0, 100)
     button.Position = UDim2.new(0.8, 0, 0.5, 0)
     button.BackgroundColor3 = CONFIG.COLORS.Accent
     button.BorderSizePixel = 0
-    button.Text = "🖱️\nCLICK"
+    button.Text = "🖱️\nAUTO\nCLICK\nON"
     button.TextColor3 = CONFIG.COLORS.White
     button.TextSize = 14
     button.Font = Enum.Font.GothamBold
@@ -1670,39 +1391,31 @@ local function createAutoClickerButton()
         end
     end)
     
-    -- FIXED: Better auto clicker loop using multiple methods
+    -- FIXED: Continuous auto-clicking loop
     local function startClicking()
         if autoClickerLoop then return end
         
         button.BackgroundColor3 = CONFIG.COLORS.Success
-        button.Text = "🖱️\nON"
+        button.Text = "🖱️\nAUTO\nCLICK\nON\n" .. autoClickerCPS .. " CPS"
         
         autoClickerLoop = task.spawn(function()
             while autoClickerEnabled do
                 local success, err = pcall(function()
-                    -- Method 1: Activate equipped tool
-                    local tool = character:FindFirstChildWhichIsA("Tool")
-                    if tool then
-                        tool:Activate()
-                    end
-                    
-                    -- Method 2: Simulate mouse click using VirtualInputManager
+                    -- Method 1: VirtualInputManager for actual mouse clicks
                     VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
                     task.wait(0.05)
                     VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
                     
-                    -- Method 3: Fire click detectors in front of player
-                    local ray = Ray.new(humanoidRootPart.Position, humanoidRootPart.CFrame.LookVector * 10)
-                    local hit, position = Workspace:FindPartOnRay(ray, character)
-                    if hit then
-                        local clickDetector = hit:FindFirstChildWhichIsA("ClickDetector")
-                        if clickDetector then
-                            fireclickdetector(clickDetector)
-                        end
+                    -- Method 2: Activate equipped tool
+                    local tool = character:FindFirstChildWhichIsA("Tool")
+                    if tool then
+                        tool:Activate()
                     end
                 end)
                 
-                task.wait(1 / autoClickerCPS)
+                -- Calculate wait time based on CPS
+                local waitTime = 1 / autoClickerCPS
+                task.wait(waitTime)
             end
         end)
     end
@@ -1710,22 +1423,14 @@ local function createAutoClickerButton()
     local function stopClicking()
         autoClickerLoop = nil
         button.BackgroundColor3 = CONFIG.COLORS.Accent
-        button.Text = "🖱️\nCLICK"
+        button.Text = "🖱️\nAUTO\nCLICK\nOFF"
     end
     
-    button.MouseButton1Click:Connect(function()
-        if not dragging then
-            -- Manual click when not dragging
-            local tool = character:FindFirstChildWhichIsA("Tool")
-            if tool then
-                tool:Activate()
-            end
-        end
-    end)
-    
-    -- Start clicking when enabled
+    -- Start immediately if enabled
     if autoClickerEnabled then
         startClicking()
+    else
+        stopClicking()
     end
     
     autoClickerButton = clickerGui
@@ -1733,12 +1438,377 @@ local function createAutoClickerButton()
     return {
         Start = startClicking,
         Stop = stopClicking,
+        UpdateCPS = function(newCPS)
+            autoClickerCPS = newCPS
+            if autoClickerEnabled then
+                button.Text = "🖱️\nAUTO\nCLICK\nON\n" .. autoClickerCPS .. " CPS"
+            end
+        end,
         Destroy = function()
             clickerGui:Destroy()
             autoClickerButton = nil
             autoClickerLoop = nil
         end
     }
+end
+
+-- VISIBLE HITBOX
+local visibleHitboxParts = {}
+
+local function visibleHitboxLoop()
+    while hitboxExtenderEnabled do
+        local success, err = pcall(function()
+            for _, targetPlayer in ipairs(Players:GetPlayers()) do
+                if targetPlayer ~= player and targetPlayer.Character then
+                    local targetChar = targetPlayer.Character
+                    local head = targetChar:FindFirstChild("Head")
+                    local hrp = targetChar:FindFirstChild("HumanoidRootPart")
+                    
+                    if head then
+                        if not head:GetAttribute("OriginalSize") then
+                            head:SetAttribute("OriginalSize", head.Size)
+                            head:SetAttribute("OriginalTransparency", head.Transparency)
+                        end
+                        
+                        head.Size = Vector3.new(hitboxRange, hitboxRange, hitboxRange)
+                        head.Transparency = 0.3
+                        head.Color = Color3.fromRGB(255, 0, 0)
+                        head.Material = Enum.Material.Neon
+                        
+                        if not visibleHitboxParts[targetPlayer] then
+                            visibleHitboxParts[targetPlayer] = {}
+                        end
+                        visibleHitboxParts[targetPlayer].Head = head
+                    end
+                    
+                    if hrp then
+                        if not hrp:GetAttribute("OriginalSize") then
+                            hrp:SetAttribute("OriginalSize", hrp.Size)
+                        end
+                        hrp.Size = Vector3.new(hitboxRange * 0.5, hitboxRange * 0.5, hitboxRange * 0.5)
+                        visibleHitboxParts[targetPlayer].HRP = hrp
+                    end
+                    
+                    for _, part in ipairs(targetChar:GetDescendants()) do
+                        if part:IsA("BasePart") and part.Name ~= "Head" and part.Name ~= "HumanoidRootPart" then
+                            if not part:GetAttribute("OriginalSize") then
+                                part:SetAttribute("OriginalSize", part.Size)
+                            end
+                            part.Size = part:GetAttribute("OriginalSize") * 1.5
+                        end
+                    end
+                end
+            end
+        end)
+        
+        task.wait(0.5)
+    end
+    
+    pcall(function()
+        for targetPlayer, parts in pairs(visibleHitboxParts) do
+            if targetPlayer.Character then
+                for partName, part in pairs(parts) do
+                    if part and part.Parent then
+                        part.Size = part:GetAttribute("OriginalSize") or part.Size
+                        if partName == "Head" then
+                            part.Transparency = part:GetAttribute("OriginalTransparency") or 0
+                            part.Color = Color3.fromRGB(255, 255, 255)
+                            part.Material = Enum.Material.Plastic
+                        end
+                    end
+                end
+            end
+        end
+        visibleHitboxParts = {}
+    end)
+end
+
+-- NEW: Skeleton ESP with Distance
+local function createSkeletonESP(targetPlayer)
+    if targetPlayer == player then return end
+    if skeletonESPObjects[targetPlayer] then return end
+    
+    local espFolder = Instance.new("Folder")
+    espFolder.Name = targetPlayer.Name .. "_SkeletonESP"
+    espFolder.Parent = playerGui
+    
+    local lines = {}
+    local distanceLabel = nil
+    
+    local function onCharacterAdded(char)
+        task.wait(1)
+        
+        local humanoid = char:FindFirstChild("Humanoid")
+        if not humanoid then return end
+        
+        -- Create distance label
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "DistanceLabel"
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 5, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = espFolder
+        
+        distanceLabel = Instance.new("TextLabel")
+        distanceLabel.Size = UDim2.new(1, 0, 1, 0)
+        distanceLabel.BackgroundTransparency = 1
+        distanceLabel.Text = "0 studs"
+        distanceLabel.TextColor3 = CONFIG.COLORS.White
+        distanceLabel.TextStrokeTransparency = 0
+        distanceLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+        distanceLabel.Font = Enum.Font.GothamBold
+        distanceLabel.TextSize = 14
+        distanceLabel.Parent = billboard
+        
+        -- Function to update skeleton lines
+        local function updateSkeleton()
+            if not espEnabled then return end
+            if not targetPlayer.Character then return end
+            
+            -- Get body parts
+            local head = char:FindFirstChild("Head")
+            local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+            local leftArm = char:FindFirstChild("LeftUpperArm") or char:FindFirstChild("Left Arm")
+            local rightArm = char:FindFirstChild("RightUpperArm") or char:FindFirstChild("Right Arm")
+            local leftLeg = char:FindFirstChild("LeftUpperLeg") or char:FindFirstChild("Left Leg")
+            local rightLeg = char:FindFirstChild("RightUpperLeg") or char:FindFirstChild("Right Leg")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            
+            if not (head and torso and root) then return end
+            
+            -- Update distance
+            if distanceLabel and distanceLabel.Parent then
+                local dist = math.floor((humanoidRootPart.Position - root.Position).Magnitude)
+                distanceLabel.Text = dist .. " studs"
+                billboard.Adornee = head
+            end
+            
+            -- Clear old lines
+            for _, line in ipairs(lines) do
+                if line then line:Destroy() end
+            end
+            lines = {}
+            
+            -- Function to create line between two parts
+            local function createLine(part1, part2, color)
+                if not (part1 and part2) then return end
+                
+                local line = Instance.new("LineHandleAdornment")
+                line.Name = "SkeletonLine"
+                line.Color3 = color or CONFIG.COLORS.ESP
+                line.Thickness = 2
+                line.ZIndex = 10
+                line.AlwaysOnTop = true
+                line.Adornee = workspace.Terrain -- Attach to terrain to avoid part destruction issues
+                line.Parent = espFolder
+                
+                -- Update line positions
+                local function updateLine()
+                    if not (part1.Parent and part2.Parent) then 
+                        line:Destroy()
+                        return 
+                    end
+                    local pos1 = part1.Position
+                    local pos2 = part2.Position
+                    line.Length = (pos2 - pos1).Magnitude
+                    line.CFrame = CFrame.lookAt(pos1, pos2) * CFrame.new(0, 0, -line.Length / 2)
+                end
+                
+                -- Update immediately and store reference
+                updateLine()
+                table.insert(lines, line)
+                
+                -- Update on render step
+                local connection
+                connection = RunService.RenderStepped:Connect(function()
+                    if not line or not line.Parent then
+                        connection:Disconnect()
+                        return
+                    end
+                    updateLine()
+                end)
+            end
+            
+            -- Create skeleton lines
+            createLine(head, torso, CONFIG.COLORS.ESP)
+            createLine(torso, leftArm, CONFIG.COLORS.ESP)
+            createLine(torso, rightArm, CONFIG.COLORS.ESP)
+            createLine(torso, leftLeg, CONFIG.COLORS.ESP)
+            createLine(torso, rightLeg, CONFIG.COLORS.ESP)
+            createLine(leftArm, leftLeg and leftLeg:FindFirstChild("LeftLowerLeg") or leftLeg, CONFIG.COLORS.ESP)
+            createLine(rightArm, rightLeg and rightLeg:FindFirstChild("RightLowerLeg") or rightLeg, CONFIG.COLORS.ESP)
+        end
+        
+        -- Update skeleton when character changes
+        char:WaitForChild("Humanoid").Died:Connect(function()
+            for _, line in ipairs(lines) do
+                if line then line:Destroy() end
+            end
+            lines = {}
+        end)
+        
+        -- Continuous update
+        while espEnabled and targetPlayer.Character == char do
+            updateSkeleton()
+            task.wait(0.1)
+        end
+    end
+    
+    if targetPlayer.Character then
+        onCharacterAdded(targetPlayer.Character)
+    end
+    
+    targetPlayer.CharacterAdded:Connect(onCharacterAdded)
+    skeletonESPObjects[targetPlayer] = espFolder
+end
+
+local function removeSkeletonESP(targetPlayer)
+    if skeletonESPObjects[targetPlayer] then
+        skeletonESPObjects[targetPlayer]:Destroy()
+        skeletonESPObjects[targetPlayer] = nil
+    end
+end
+
+-- Regular ESP (boxes, names, health)
+local function createESP(targetPlayer)
+    if targetPlayer == player then return end
+    if espObjects[targetPlayer] then return end
+    
+    local espFolder = Instance.new("Folder")
+    espFolder.Name = targetPlayer.Name .. "_ESP"
+    espFolder.Parent = playerGui
+    
+    local function onCharacterAdded(char)
+        task.wait(1)
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local head = char:FindFirstChild("Head")
+        local humanoid = char:FindFirstChild("Humanoid")
+        
+        if not hrp or not head then return end
+        
+        local box = Instance.new("BoxHandleAdornment")
+        box.Name = "ESPBox"
+        box.Size = hrp.Size + Vector3.new(2, 3, 2)
+        box.Color3 = CONFIG.COLORS.ESP
+        box.Transparency = 0.5
+        box.ZIndex = 10
+        box.AlwaysOnTop = true
+        box.Adornee = hrp
+        box.Parent = espFolder
+        
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESPName"
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Adornee = head
+        billboard.Parent = espFolder
+        
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Size = UDim2.new(1, 0, 1, 0)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = targetPlayer.Name
+        nameLabel.TextColor3 = CONFIG.COLORS.ESP
+        nameLabel.TextStrokeTransparency = 0
+        nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextSize = 14
+        nameLabel.Parent = billboard
+        
+        if humanoid then
+            local healthLabel = Instance.new("TextLabel")
+            healthLabel.Name = "ESPHealth"
+            healthLabel.Size = UDim2.new(1, 0, 0.5, 0)
+            healthLabel.Position = UDim2.new(0, 0, 0.5, 0)
+            healthLabel.BackgroundTransparency = 1
+            healthLabel.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
+            healthLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+            healthLabel.TextStrokeTransparency = 0
+            healthLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+            healthLabel.Font = Enum.Font.GothamBold
+            healthLabel.TextSize = 12
+            healthLabel.Parent = billboard
+            
+            humanoid.HealthChanged:Connect(function()
+                if healthLabel and healthLabel.Parent then
+                    healthLabel.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
+                end
+            end)
+        end
+        
+        local tracer = Instance.new("Frame")
+        tracer.Name = "ESPTracer"
+        tracer.BackgroundColor3 = CONFIG.COLORS.ESP
+        tracer.BorderSizePixel = 0
+        tracer.Size = UDim2.new(0, 2, 0, 2)
+        tracer.Parent = espFolder
+        
+        RunService.RenderStepped:Connect(function()
+            if not espEnabled or not tracer.Parent then return end
+            if not targetPlayer.Character or not hrp.Parent then return end
+            
+            local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+            if onScreen then
+                local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                local target = Vector2.new(screenPos.X, screenPos.Y)
+                local distance = (center - target).Magnitude
+                
+                tracer.Visible = true
+                tracer.Size = UDim2.new(0, distance, 0, 2)
+                tracer.Position = UDim2.new(0, math.min(center.X, target.X), 0, math.min(center.Y, target.Y))
+                tracer.Rotation = math.deg(math.atan2(target.Y - center.Y, target.X - center.X))
+            else
+                tracer.Visible = false
+            end
+        end)
+    end
+    
+    if targetPlayer.Character then
+        onCharacterAdded(targetPlayer.Character)
+    end
+    
+    targetPlayer.CharacterAdded:Connect(onCharacterAdded)
+    espObjects[targetPlayer] = espFolder
+end
+
+local function removeESP(targetPlayer)
+    if espObjects[targetPlayer] then
+        espObjects[targetPlayer]:Destroy()
+        espObjects[targetPlayer] = nil
+    end
+end
+
+local function espLoop()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player then
+            createESP(p)
+            createSkeletonESP(p) -- Also create skeleton ESP
+        end
+    end
+    
+    Players.PlayerAdded:Connect(function(p)
+        if espEnabled then
+            createESP(p)
+            createSkeletonESP(p)
+        end
+    end)
+    
+    Players.PlayerRemoving:Connect(function(p)
+        removeESP(p)
+        removeSkeletonESP(p)
+    end)
+    
+    while espEnabled do
+        task.wait(1)
+    end
+    
+    for p, _ in pairs(espObjects) do
+        removeESP(p)
+    end
+    for p, _ in pairs(skeletonESPObjects) do
+        removeSkeletonESP(p)
+    end
 end
 
 -- GUI Creation
@@ -1800,7 +1870,7 @@ closeBtn.Parent = titleBar
 
 closeBtn.MouseButton1Click:Connect(function()
     hitboxExtenderEnabled = false
-    autoGapEnabled = false
+    waveProtectionEnabled = false
     autoCollectSpecificBrainrot = false
     autoUpgradeSelectedBrainrot = false
     autoClickerEnabled = false
@@ -1815,6 +1885,9 @@ closeBtn.MouseButton1Click:Connect(function()
     
     for p, _ in pairs(espObjects) do
         removeESP(p)
+    end
+    for p, _ in pairs(skeletonESPObjects) do
+        removeSkeletonESP(p)
     end
     screenGui:Destroy()
 end)
@@ -2737,7 +2810,8 @@ createToggle(automationTab, "Auto Rebirth", "Automatically rebirths when possibl
     if enabled then task.spawn(autoRebirthLoop) end
 end)
 
-createToggle(automationTab, "Auto Upgrade Base", "Clicks the base upgrade button", function(enabled)
+-- FIXED: Auto Upgrade Base now uses correct remote
+createToggle(automationTab, "Auto Upgrade Base", "Uses RemoteFunction to upgrade base", function(enabled)
     autoUpgradeBase = enabled
     if enabled then task.spawn(autoUpgradeBaseLoop) end
 end)
@@ -2759,7 +2833,8 @@ createWorkingDropdown(automationTab, "Select Brainrot to Collect", function(brai
     selectedBrainrotToCollect = brainrotInfo
 end)
 
-createToggle(automationTab, "Auto Collect Selected Brainrot", "Tween to brainrot, hold E for 2.5s, return to base", function(enabled)
+-- FIXED: Instant collection without 3-second wait
+createToggle(automationTab, "Auto Collect Selected Brainrot", "Instant collect, no delay", function(enabled)
     autoCollectSpecificBrainrot = enabled
     if enabled then
         if not selectedBrainrotToCollect then
@@ -2770,7 +2845,6 @@ createToggle(automationTab, "Auto Collect Selected Brainrot", "Tween to brainrot
     end
 end)
 
--- FIXED: Auto Upgrade Selected Brainrot - Now scans base and displays info
 createToggle(automationTab, "Auto Upgrade Selected Brainrot", "Scans base, displays name & slot, auto upgrades", function(enabled)
     autoUpgradeSelectedBrainrot = enabled
     if enabled then
@@ -2778,7 +2852,8 @@ createToggle(automationTab, "Auto Upgrade Selected Brainrot", "Scans base, displ
     end
 end)
 
-createToggle(automationTab, "Auto Clicker", "Draggable button for auto clicking", function(enabled)
+-- FIXED: Auto Clicker with draggable button that auto-clicks
+createToggle(automationTab, "Auto Clicker", "Draggable button that auto-clicks continuously", function(enabled)
     autoClickerEnabled = enabled
     if enabled then
         createAutoClickerButton()
@@ -2792,10 +2867,18 @@ end)
 
 createSlider(automationTab, "Clicker CPS", "Clicks per second", 1, 50, 10, function(value)
     autoClickerCPS = value
+    -- Update button text if active
+    if autoClickerButton and autoClickerEnabled then
+        local button = autoClickerButton:FindFirstChild("AutoClickerButton")
+        if button then
+            button.Text = "🖱️\nAUTO\nCLICK\nON\n" .. value .. " CPS"
+        end
+    end
     print("Clicker CPS set to:", value)
 end)
 
-createToggle(automationTab, "Auto Spawn Machine", "Auto inserts brainrots into spawn machine (holds E)", function(enabled)
+-- FIXED: Auto Spawn Machine with better detection
+createToggle(automationTab, "Auto Spawn Machine", "Detects all machine types, tweens and inserts", function(enabled)
     autoSpawnMachine = enabled
     if enabled then task.spawn(autoSpawnMachineLoop) end
 end)
@@ -2850,13 +2933,17 @@ createToggle(combatTab, "Show Range Visual", "Shows sphere around you", function
     end
 end)
 
-createToggle(combatTab, "Player ESP", "Shows boxes, names, health, tracers", function(enabled)
+-- NEW: Player ESP with Skeleton and Distance
+createToggle(combatTab, "Player ESP + Skeleton", "Shows skeleton, distance, boxes, names, health", function(enabled)
     espEnabled = enabled
     if enabled then
         task.spawn(espLoop)
     else
         for p, _ in pairs(espObjects) do
             removeESP(p)
+        end
+        for p, _ in pairs(skeletonESPObjects) do
+            removeSkeletonESP(p)
         end
     end
 end)
@@ -2887,7 +2974,6 @@ createStageDropdown(stagesTab, "Select Stage/Rarity", function(stage)
     selectedStage = stage
 end)
 
--- FIXED: Button now uses sequential tweening through all walls
 createButton(stagesTab, "Tween to Selected Stage (Sequential)", function()
     if not selectedStage then
         warn("Please select a stage first!")
@@ -2939,16 +3025,17 @@ createButton(sellTab, "Sell Holding Brainrots", function()
 end)
 
 -- ==================== SETTINGS TAB ====================
-createToggle(settingsTab, "Smart Auto Gap", "Returns to position after wave", function(enabled)
-    autoGapEnabled = enabled
+-- NEW: Wave Protection using VIP walls
+createToggle(settingsTab, "Wave Protection (VIP Walls)", "When wave is 100-150 studs, goes to nearest VIP wall. Safety priority!", function(enabled)
+    waveProtectionEnabled = enabled
     if enabled then
-        task.spawn(smartGapLoop)
+        task.spawn(waveProtectionLoop)
     end
 end)
 
-createSlider(settingsTab, "Wave Detection Range", "How far to detect waves", 50, 300, 150, function(value)
-    gapDetectionRange = value
-    print("Detection range:", value)
+createSlider(settingsTab, "Wave Detection Range", "How far to detect waves (100-150 recommended)", 50, 200, 125, function(value)
+    waveProtectionRange = value
+    print("Wave detection range:", value)
 end)
 
 -- Select Automation tab by default
@@ -2966,5 +3053,5 @@ player.CharacterAdded:Connect(function(newChar)
     humanoid = character:WaitForChild("Humanoid")
 end)
 
-print("Nexus|Escape Tsunami for Brainrots - COMPLETE EDITION v6 Loaded!")
-print("New features: Sequential VIP Wall Tweening, Proximity Prompt Hold, Fixed Auto Clicker & Spawn Machine!")
+print("Nexus|Escape Tsunami for Brainrots - COMPLETE EDITION v7 Loaded!")
+print("New features: Wave Protection with VIP Walls, Fixed Auto Clicker, Skeleton ESP, Better Spawn Machine!")
