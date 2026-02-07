@@ -26,7 +26,6 @@ local CONFIG = {
 }
     -- FIXED: Raw GitHub URL format
     MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/refs/heads/main/Main.lua",
-    
     COLORS = {
         Background = Color3.fromRGB(30, 30, 35),
         InputBg = Color3.fromRGB(45, 45, 55),
