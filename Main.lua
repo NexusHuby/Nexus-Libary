@@ -1,5 +1,5 @@
 --[[
-    Nexus|Escape Tsunami for Brainrots - Complete Edition Fixed v3
+    Nexus|Escape Tsunami for Brainrots - Complete Edition Fixed v4
 ]]
 
 local Players = game:GetService("Players")
@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Camera = Workspace.CurrentCamera
+local CollectionService = game:GetService("CollectionService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -107,6 +108,7 @@ local espObjects = {}
 -- Event Tab Variables
 local autoCollectGoldBars = false
 local autoCompleteObby = false
+local autoSpinWheel = false
 
 -- Auto Collect Specific Brainrot Variables
 local autoCollectSpecificBrainrot = false
@@ -123,12 +125,20 @@ local currentGapTarget = nil
 local positionBeforeGap = nil
 local gapSafetyOffset = Vector3.new(0, -2, 0)
 local lastGapTime = 0
-local gapCooldown = 2 -- Seconds before can enter gap again
+local gapCooldown = 2
 
 -- Auto Upgrade Selected Brainrot Variables
 local autoUpgradeSelectedBrainrot = false
 local selectedBrainrotToUpgrade = nil
 local brainrotUpgradeDropdownOpen = false
+
+-- NEW: Auto Clicker Variables
+local autoClickerEnabled = false
+local autoClickerCPS = 10
+local autoClickerButton = nil
+
+-- NEW: Auto Spawn Machine Variables
+local autoSpawnMachine = false
 
 -- Rarity order for brainrot dropdown
 local RARITY_ORDER = {
@@ -292,7 +302,6 @@ end
 
 -- Check if position is safe
 local function isPositionSafe(position)
-    -- Check if under map
     if position.Y < 10 then
         return false, "under_map"
     end
@@ -303,7 +312,6 @@ end
 local function safeTweenToPosition(targetPosition, targetCFrame, useGapIfNeeded)
     useGapIfNeeded = useGapIfNeeded ~= false
     
-    -- Ensure target is safe height
     local safeTargetPos = Vector3.new(targetPosition.X, math.max(targetPosition.Y, 15), targetPosition.Z)
     local safeTargetCFrame = CFrame.new(safeTargetPos) * (targetCFrame - targetCFrame.Position)
     
@@ -439,7 +447,7 @@ local function autoCollectSpecificBrainrotLoop()
     print("Auto Collect Specific Brainrot stopped")
 end
 
--- FIXED SMART GAP SYSTEM - No more bouncing
+-- FIXED SMART GAP SYSTEM - Tweens UNDER the wave to gap
 local function smartGapLoop()
     print("Smart Auto Gap started")
     positionBeforeGap = nil
@@ -447,7 +455,6 @@ local function smartGapLoop()
     
     while autoGapEnabled do
         local success, err = pcall(function()
-            -- Don't run if we're collecting brainrot
             if isCollectingBrainrot then
                 task.wait(0.5)
                 return
@@ -457,7 +464,6 @@ local function smartGapLoop()
             local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
             
             if not activeTsunamis or not defaultMap then 
-                -- No waves, return to position if we were in gap
                 if isInGap and positionBeforeGap then
                     local timeSinceLastGap = tick() - lastGapTime
                     if timeSinceLastGap > gapCooldown then
@@ -475,7 +481,7 @@ local function smartGapLoop()
             local gapsFolder = defaultMap:FindFirstChild("Gaps")
             if not gapsFolder then return end
             
-            -- Find nearest wave
+            -- Find nearest wave and check if we need to go to gap
             local nearestWave = nil
             local nearestDist = math.huge
             local waveApproaching = false
@@ -501,7 +507,6 @@ local function smartGapLoop()
                 end
             end
             
-            -- Decide if we need to enter gap
             local shouldEnterGap = false
             
             if nearestWave then
@@ -521,19 +526,17 @@ local function smartGapLoop()
             end
             
             if shouldEnterGap and not isInGap then
-                -- Check cooldown
                 local timeSinceLastGap = tick() - lastGapTime
                 if timeSinceLastGap < gapCooldown then
-                    return -- Wait before entering gap again
+                    return
                 end
                 
-                -- Save position before entering gap
                 if not positionBeforeGap then
                     positionBeforeGap = humanoidRootPart.CFrame
                     lastGapTime = tick()
                 end
                 
-                -- Find best gap
+                -- Find best gap (UNDER the wave)
                 local bestGap = nil
                 local bestScore = -math.huge
                 
@@ -545,8 +548,8 @@ local function smartGapLoop()
                             local distToUs = (humanoidRootPart.Position - mud.Position).Magnitude
                             local distFromWave = nearestWave and (mud.Position - nearestWave.Position).Magnitude or 999
                             
-                            -- Prefer gaps that are close to us but far from wave
-                            local score = (distFromWave * 1.5) - (distToUs * 0.5)
+                            -- Score: prefer gaps that are close to us but FAR from wave (under the wave)
+                            local score = (distFromWave * 2) - (distToUs * 0.5)
                             
                             if score > bestScore then
                                 bestScore = score
@@ -560,23 +563,22 @@ local function smartGapLoop()
                     currentGapTarget = bestGap
                     isInGap = true
                     
-                    -- Smooth tween to gap
+                    -- Tween DOWN to gap (under the wave)
                     local targetCFrame = bestGap.CFrame + gapSafetyOffset
                     local currentDist = (humanoidRootPart.Position - bestGap.Position).Magnitude
                     
                     if currentDist > 5 then
-                        local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.4), {CFrame = targetCFrame})
-                        tween:Play()
+                        -- Use a downward tween to go UNDER the wave
+                        local downTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.4), {CFrame = targetCFrame})
+                        downTween:Play()
                     else
                         humanoidRootPart.CFrame = targetCFrame
                     end
                 end
                 
             elseif not shouldEnterGap and isInGap then
-                -- Check if safe to exit
                 local timeInGap = tick() - lastGapTime
                 
-                -- Only exit if we've been in gap for at least 1 second and wave is far
                 if timeInGap > 1 and (not nearestWave or nearestDist > gapDetectionRange * 1.2) then
                     if positionBeforeGap then
                         local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.8), {CFrame = positionBeforeGap})
@@ -590,10 +592,8 @@ local function smartGapLoop()
                 end
             end
             
-            -- If in gap, keep us there and zero velocity
             if isInGap and currentGapTarget then
                 humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
-                -- Occasionally re-assert position to prevent drifting
                 if tick() % 0.5 < 0.1 then
                     humanoidRootPart.CFrame = currentGapTarget.CFrame + gapSafetyOffset
                 end
@@ -607,7 +607,6 @@ local function smartGapLoop()
         task.wait(0.1)
     end
     
-    -- Cleanup
     if isInGap and positionBeforeGap then
         local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = positionBeforeGap})
         returnTween:Play()
@@ -980,7 +979,7 @@ local function autoCollectCashLoop()
     autoCollectCashTweened = false
 end
 
--- FIXED: Auto Collect Gold Bars - Now teleports models to player
+-- Auto Collect Gold Bars - Teleports models to player
 local function autoCollectGoldBarsLoop()
     while autoCollectGoldBars do
         local success, err = pcall(function()
@@ -991,13 +990,10 @@ local function autoCollectGoldBarsLoop()
                 if not autoCollectGoldBars then break end
                 
                 if child:IsA("Model") and child.Name == "GoldBar" then
-                    -- Teleport entire model to player instead of just Main part
                     local mainPart = child:FindFirstChild("Main")
                     if mainPart and mainPart:IsA("BasePart") then
-                        -- Move entire model
                         child:SetPrimaryPartCFrame(humanoidRootPart.CFrame * CFrame.new(0, 0, -3))
                         
-                        -- Also try to touch for collection
                         firetouchinterest(humanoidRootPart, mainPart, 0)
                         task.wait(0.05)
                         firetouchinterest(humanoidRootPart, mainPart, 1)
@@ -1010,6 +1006,143 @@ local function autoCollectGoldBarsLoop()
         
         task.wait(0.2)
     end
+end
+
+-- NEW: Auto Spin Wheel Loop
+local function autoSpinWheelLoop()
+    local Net = require(ReplicatedStorage.Packages.Net)
+    local WheelSpinRoll = Net:RemoteFunction("WheelSpin.Roll")
+    local WheelSpinComplete = Net:RemoteEvent("WheelSpin.Complete")
+    
+    while autoSpinWheel do
+        local success, err = pcall(function()
+            -- Check if we have spins available
+            local ClientGlobals = require(ReplicatedStorage.Client.Modules.ClientGlobals)
+            local spins = ClientGlobals.PlayerData:TryIndex({"WheelSpins", "Money"}) or 0
+            
+            if spins > 0 then
+                print("Auto Spinning Wheel... Spins left:", spins)
+                
+                -- Invoke spin
+                local result, _, _, spinId = WheelSpinRoll:InvokeServer("Money", false)
+                
+                if result then
+                    -- Wait for spin animation (approx 7 seconds)
+                    task.wait(7.5)
+                    
+                    -- Complete the spin
+                    if spinId then
+                        WheelSpinComplete:FireServer(spinId)
+                    end
+                    
+                    task.wait(1)
+                else
+                    warn("Spin failed, retrying...")
+                    task.wait(2)
+                end
+            else
+                -- No spins left, check if we can buy with coins
+                local EconomyMath = require(ReplicatedStorage.Shared.utils.EconomyMath)
+                local coins = ClientGlobals.PlayerData:TryIndex({"SpecialCurrency", "MoneyCoin"}) or 0
+                
+                if coins >= EconomyMath.WheelCoinCost then
+                    print("Buying spin with coins...")
+                    -- Try to spin (it will deduct coins automatically)
+                    local result, _, _, spinId = WheelSpinRoll:InvokeServer("Money", false)
+                    
+                    if result then
+                        task.wait(7.5)
+                        if spinId then
+                            WheelSpinComplete:FireServer(spinId)
+                        end
+                        task.wait(1)
+                    else
+                        task.wait(2)
+                    end
+                else
+                    print("No spins or coins available, waiting...")
+                    task.wait(5)
+                end
+            end
+        end)
+        
+        if not success then
+            warn("Auto spin wheel error:", err)
+            task.wait(3)
+        end
+        
+        task.wait(1)
+    end
+    
+    print("Auto Spin Wheel stopped")
+end
+
+-- NEW: Auto Spawn Machine Loop
+local function autoSpawnMachineLoop()
+    while autoSpawnMachine do
+        local success, err = pcall(function()
+            -- Find spawn machines in workspace
+            local spawnMachines = {}
+            
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("Model") and (obj.Name:find("SpawnMachine") or obj.Name:find("Spawn Machine")) then
+                    table.insert(spawnMachines, obj)
+                end
+            end
+            
+            -- Also check CollectionService tagged
+            for _, obj in ipairs(CollectionService:GetTagged("SpawnMachine")) do
+                if obj:IsDescendantOf(Workspace) then
+                    table.insert(spawnMachines, obj)
+                end
+            end
+            
+            for _, machine in ipairs(spawnMachines) do
+                if not autoSpawnMachine then break end
+                
+                local machinePos = nil
+                if machine:IsA("Model") and machine.PrimaryPart then
+                    machinePos = machine.PrimaryPart.Position
+                elseif machine:IsA("BasePart") then
+                    machinePos = machine.Position
+                end
+                
+                if machinePos then
+                    local distance = (humanoidRootPart.Position - machinePos).Magnitude
+                    
+                    if distance < 15 then
+                        -- Look for proximity prompts
+                        for _, prompt in ipairs(machine:GetDescendants()) do
+                            if prompt:IsA("ProximityPrompt") then
+                                if prompt.Enabled and prompt.ActionText:lower():find("insert") or prompt.ActionText:lower():find("spawn") then
+                                    print("Firing spawn machine prompt:", prompt.ActionText)
+                                    fireproximityprompt(prompt)
+                                    task.wait(0.5)
+                                end
+                            end
+                        end
+                        
+                        -- Look for click detectors
+                        for _, clicker in ipairs(machine:GetDescendants()) do
+                            if clicker:IsA("ClickDetector") then
+                                print("Clicking spawn machine")
+                                fireclickdetector(clicker)
+                                task.wait(0.5)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+        
+        if not success then
+            warn("Auto spawn machine error:", err)
+        end
+        
+        task.wait(1)
+    end
+    
+    print("Auto Spawn Machine stopped")
 end
 
 local function autoUpgradeSpeedLoop()
@@ -1156,6 +1289,122 @@ local function autoCompleteObbyLoop()
     end
 end
 
+-- NEW: Create Draggable Auto Clicker Button
+local function createAutoClickerButton()
+    if autoClickerButton then
+        autoClickerButton:Destroy()
+    end
+    
+    local clickerGui = Instance.new("ScreenGui")
+    clickerGui.Name = "AutoClickerGUI"
+    clickerGui.ResetOnSpawn = false
+    clickerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    clickerGui.Parent = playerGui
+    
+    local button = Instance.new("TextButton")
+    button.Name = "AutoClickerButton"
+    button.Size = UDim2.new(0, 80, 0, 80)
+    button.Position = UDim2.new(0.8, 0, 0.5, 0)
+    button.BackgroundColor3 = CONFIG.COLORS.Accent
+    button.BorderSizePixel = 0
+    button.Text = "🖱️\nCLICK"
+    button.TextColor3 = CONFIG.COLORS.White
+    button.TextSize = 14
+    button.Font = Enum.Font.GothamBold
+    button.TextWrapped = true
+    button.Parent = clickerGui
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = button
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = CONFIG.COLORS.White
+    stroke.Thickness = 3
+    stroke.Parent = button
+    
+    -- Make draggable
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = button.Position
+        end
+    end)
+    
+    button.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    -- Click functionality
+    local clickLoop = nil
+    
+    local function startClicking()
+        if clickLoop then return end
+        
+        button.BackgroundColor3 = CONFIG.COLORS.Success
+        button.Text = "🖱️\nON"
+        
+        clickLoop = task.spawn(function()
+            while autoClickerEnabled do
+                local tool = character:FindFirstChildWhichIsA("Tool")
+                if tool then
+                    tool:Activate()
+                end
+                task.wait(1 / autoClickerCPS)
+            end
+        end)
+    end
+    
+    local function stopClicking()
+        if clickLoop then
+            clickLoop = nil
+        end
+        button.BackgroundColor3 = CONFIG.COLORS.Accent
+        button.Text = "🖱️\nCLICK"
+    end
+    
+    button.MouseButton1Click:Connect(function()
+        if not dragging then
+            -- Just a click, toggle or perform action
+            local tool = character:FindFirstChildWhichIsA("Tool")
+            if tool then
+                tool:Activate()
+            end
+        end
+    end)
+    
+    -- Start clicking when enabled
+    if autoClickerEnabled then
+        startClicking()
+    end
+    
+    autoClickerButton = clickerGui
+    
+    -- Return control functions
+    return {
+        Start = startClicking,
+        Stop = stopClicking,
+        Destroy = function()
+            clickerGui:Destroy()
+            autoClickerButton = nil
+        end
+    }
+end
+
 -- GUI Creation
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "NexusBrainrotHub"
@@ -1172,7 +1421,7 @@ mainFrame.BackgroundTransparency = CONFIG.COLORS.BackgroundTransparency
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.ClipsDescendants = true
-screenGui.Parent = playerGui
+mainFrame.Parent = screenGui
 
 local mainStroke = Instance.new("UIStroke")
 mainStroke.Color = CONFIG.COLORS.White
@@ -1218,7 +1467,15 @@ closeBtn.MouseButton1Click:Connect(function()
     autoGapEnabled = false
     autoCollectSpecificBrainrot = false
     autoUpgradeSelectedBrainrot = false
+    autoClickerEnabled = false
+    autoSpinWheel = false
+    autoSpawnMachine = false
     espEnabled = false
+    
+    if autoClickerButton then
+        autoClickerButton:Destroy()
+    end
+    
     for p, _ in pairs(espObjects) do
         removeESP(p)
     end
@@ -1532,7 +1789,7 @@ local function createSlider(parent, name, description, min, max, default, callba
     return frame
 end
 
--- FIXED: Working Dropdown with proper scrolling and selection
+-- Working Dropdown with proper scrolling and selection
 local function createWorkingDropdown(parent, name, callback)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, -20, 0, 80)
@@ -1577,7 +1834,7 @@ local function createWorkingDropdown(parent, name, callback)
     local dropdownContainer = Instance.new("Frame")
     dropdownContainer.Name = "DropdownContainer"
     dropdownContainer.Size = UDim2.new(0, 300, 0, 0)
-    dropdownContainer.Position = UDim2.new(0, frame.AbsolutePosition.X + 15, 0, 0) -- Will update position
+    dropdownContainer.Position = UDim2.new(0, frame.AbsolutePosition.X + 15, 0, 0)
     dropdownContainer.BackgroundColor3 = CONFIG.COLORS.DropdownBg
     dropdownContainer.BorderSizePixel = 0
     dropdownContainer.Visible = false
@@ -1637,7 +1894,6 @@ local function createWorkingDropdown(parent, name, callback)
     end
     
     local function populateOptions(filterText)
-        -- Clear existing
         for _, child in ipairs(scrollingFrame:GetChildren()) do
             if child:IsA("TextButton") then
                 child:Destroy()
@@ -1671,7 +1927,6 @@ local function createWorkingDropdown(parent, name, callback)
             optionCorner.CornerRadius = UDim.new(0, 6)
             optionCorner.Parent = optionBtn
             
-            -- Rarity color bar
             local colorBar = Instance.new("Frame")
             colorBar.Size = UDim2.new(0, 4, 0, 25)
             colorBar.Position = UDim2.new(0, 8, 0.5, -12)
@@ -1683,7 +1938,6 @@ local function createWorkingDropdown(parent, name, callback)
             barCorner.CornerRadius = UDim.new(1, 0)
             barCorner.Parent = colorBar
             
-            -- Set rarity color
             if brainrotInfo.rarity == "Common" then
                 colorBar.BackgroundColor3 = Color3.fromRGB(169, 169, 169)
             elseif brainrotInfo.rarity == "Uncommon" then
@@ -1717,14 +1971,12 @@ local function createWorkingDropdown(parent, name, callback)
                 dropdownBtn.Text = brainrotInfo.fullName
                 dropdownBtn.TextColor3 = CONFIG.COLORS.White
                 
-                -- Close dropdown
                 isOpen = false
                 TweenService:Create(dropdownContainer, TweenInfo.new(0.2), {Size = UDim2.new(0, 300, 0, 0)}):Play()
                 task.delay(0.2, function()
                     dropdownContainer.Visible = false
                 end)
                 
-                -- Callback
                 callback(brainrotInfo)
                 print("Selected brainrot:", brainrotInfo.fullName)
             end)
@@ -1735,7 +1987,6 @@ local function createWorkingDropdown(parent, name, callback)
     
     populateOptions("")
     
-    -- Toggle dropdown
     dropdownBtn.MouseButton1Click:Connect(function()
         isOpen = not isOpen
         
@@ -1753,12 +2004,10 @@ local function createWorkingDropdown(parent, name, callback)
         end
     end)
     
-    -- Search functionality
     searchBox:GetPropertyChangedSignal("Text"):Connect(function()
         populateOptions(searchBox.Text)
     end)
     
-    -- Close when clicking outside
     local clickConnection
     clickConnection = UserInputService.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 and isOpen then
@@ -1769,7 +2018,6 @@ local function createWorkingDropdown(parent, name, callback)
             local btnPos = dropdownBtn.AbsolutePosition
             local btnSize = dropdownBtn.AbsoluteSize
             
-            -- Check if click is outside dropdown and outside button
             local outsideDropdown = (mousePos.X < containerPos.X or mousePos.X > containerPos.X + containerSize.X or
                                     mousePos.Y < containerPos.Y or mousePos.Y > containerPos.Y + containerSize.Y)
             local outsideButton = (mousePos.X < btnPos.X or mousePos.X > btnPos.X + btnSize.X or
@@ -1785,14 +2033,12 @@ local function createWorkingDropdown(parent, name, callback)
         end
     end)
     
-    -- Update position when scrolling
     scrollingFrame:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
         if isOpen then
             updatePosition()
         end
     end)
     
-    -- Cleanup
     frame.Destroying:Connect(function()
         if clickConnection then
             clickConnection:Disconnect()
@@ -1960,7 +2206,6 @@ createToggle(automationTab, "Auto Upgrade Brainrot", "Automatically upgrades sel
     end
 end)
 
--- FIXED: Working dropdown for brainrot collection
 createWorkingDropdown(automationTab, "Select Brainrot to Collect", function(brainrotInfo)
     selectedBrainrotToCollect = brainrotInfo
 end)
@@ -1976,7 +2221,6 @@ createToggle(automationTab, "Auto Collect Selected Brainrot", "Tween to brainrot
     end
 end)
 
--- FIXED: Working dropdown for brainrot upgrade selection
 createWorkingDropdown(automationTab, "Select Brainrot to Auto-Upgrade", function(brainrotInfo)
     selectedBrainrotToUpgrade = brainrotInfo
 end)
@@ -1990,6 +2234,30 @@ createToggle(automationTab, "Auto Upgrade Selected Brainrot", "Automatically upg
         end
         task.spawn(autoUpgradeSelectedBrainrotLoop)
     end
+end)
+
+-- NEW: Auto Clicker Toggle
+createToggle(automationTab, "Auto Clicker", "Draggable button for auto clicking", function(enabled)
+    autoClickerEnabled = enabled
+    if enabled then
+        createAutoClickerButton()
+    else
+        if autoClickerButton then
+            autoClickerButton:Destroy()
+            autoClickerButton = nil
+        end
+    end
+end)
+
+createSlider(automationTab, "Clicker CPS", "Clicks per second", 1, 50, 10, function(value)
+    autoClickerCPS = value
+    print("Clicker CPS set to:", value)
+end)
+
+-- NEW: Auto Spawn Machine Toggle
+createToggle(automationTab, "Auto Spawn Machine", "Auto inserts brainrots into spawn machine", function(enabled)
+    autoSpawnMachine = enabled
+    if enabled then task.spawn(autoSpawnMachineLoop) end
 end)
 
 -- ==================== COMBAT TAB ====================
@@ -2059,9 +2327,6 @@ createToggle(combatTab, "Auto Hit", "Auto attacks enemies in range", function(en
 end)
 
 -- ==================== EVENT TAB ====================
--- REMOVED: Auto Collect Selected Brainrot from Event tab
-
--- FIXED: Auto Collect Gold Bars now teleports models to player
 createToggle(eventTab, "Auto Collect Gold Bars", "Teleports gold bar models to you", function(enabled)
     autoCollectGoldBars = enabled
     if enabled then task.spawn(autoCollectGoldBarsLoop) end
@@ -2070,6 +2335,12 @@ end)
 createToggle(eventTab, "Auto Complete Obby", "Auto completes all 3 obbies", function(enabled)
     autoCompleteObby = enabled
     if enabled then task.spawn(autoCompleteObbyLoop) end
+end)
+
+-- NEW: Auto Spin Wheel Toggle
+createToggle(eventTab, "Auto Spin Wheel", "Automatically spins the wheel when near", function(enabled)
+    autoSpinWheel = enabled
+    if enabled then task.spawn(autoSpinWheelLoop) end
 end)
 
 -- ==================== SELL TAB ====================
@@ -2115,5 +2386,5 @@ player.CharacterAdded:Connect(function(newChar)
     humanoid = character:WaitForChild("Humanoid")
 end)
 
-print("Nexus|Escape Tsunami for Brainrots - COMPLETE EDITION v3 Loaded!")
-print("Fixes: No more bouncing, working dropdowns, teleport gold bars!")
+print("Nexus|Escape Tsunami for Brainrots - COMPLETE EDITION v4 Loaded!")
+print("New features: Auto Clicker, Auto Spin Wheel, Auto Spawn Machine!")
