@@ -1,6 +1,8 @@
 --[[
-    Nexus|Escape Tsunami for Brainrots - Ultimate Fixed Edition v10
-    Fixes: Auto Collect Cash base-only, Instant proximity prompts, Auto Farm Ultra improvements, Event tab organization
+    Nexus|Escape Tsunami for Brainrots - Ultimate Edition v12
+    NEW: FPS Optimizer, Server Hopper, Rejoin, Discord Webhook Integration
+    NEW: Brainrot ESP with Names & Rarity Colors + VIP Wall Bypass
+    Fixes: Auto Collect Cash base detection, Instant proximity prompts
 ]]
 
 local Players = game:GetService("Players")
@@ -12,6 +14,9 @@ local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Camera = Workspace.CurrentCamera
 local CollectionService = game:GetService("CollectionService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local Lighting = game:GetService("Lighting")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -107,6 +112,19 @@ local CONFIG = {
         DropdownBg = Color3.fromRGB(30, 30, 35),
         DropdownHover = Color3.fromRGB(50, 50, 60),
         DropdownSelected = Color3.fromRGB(70, 70, 85)
+    },
+    -- RARITY COLORS FOR ESP
+    RARITY_COLORS = {
+        Common = Color3.fromRGB(169, 169, 169),
+        Uncommon = Color3.fromRGB(0, 255, 0),
+        Rare = Color3.fromRGB(0, 100, 255),
+        Epic = Color3.fromRGB(128, 0, 128),
+        Legendary = Color3.fromRGB(255, 215, 0),
+        Mythical = Color3.fromRGB(255, 0, 255),
+        Secret = Color3.fromRGB(255, 0, 0),
+        Divine = Color3.fromRGB(255, 255, 255),
+        Celestial = Color3.fromRGB(0, 255, 255),
+        Cosmic = Color3.fromRGB(75, 0, 130)
     }
 }
 
@@ -119,7 +137,7 @@ local autoSellInventory = false
 local autoRebirth = false
 local autoFarmUltra = false
 local ultraFarmCollecting = false
-local instantProximityEnabled = false -- NEW: Global instant proximity toggle
+local instantProximityEnabled = false
 
 -- Combat Tab Variables
 local hitboxExtenderEnabled = false
@@ -135,7 +153,7 @@ local skeletonESPObjects = {}
 local autoCollectGoldBars = false
 local autoCompleteObby = false
 local autoSpinWheel = false
-local autoTeleportTickets = false -- Fixed: Was coins, now tickets
+local autoTeleportTickets = false
 local autoTeleportConsoles = false
 
 -- Auto Collect Specific Brainrot Variables
@@ -163,6 +181,30 @@ local autoClickerLoop = nil
 local selectedStage = nil
 local autoTweenToStage = false
 local isTweeningToStage = false
+
+-- NEW: Brainrot ESP Variables
+local brainrotESPEnabled = false
+local brainrotESPObjects = {}
+local showBrainrotNames = true
+local showBrainrotDistance = true
+local espMaxDistance = 1000
+
+-- NEW: VIP Wall Bypass Variables
+local vipWallBypassEnabled = false
+local vipWallNoclip = false
+
+-- NEW: FPS Optimizer Variables
+local fpsOptimized = false
+local originalSettings = {}
+
+-- NEW: Server Hopper Variables
+local serverHopInProgress = false
+
+-- NEW: Discord Webhook Variables
+local webhookEnabled = false
+local webhookURL = ""
+local notifiedBrainrots = {} -- Prevent duplicate notifications
+local WEBHOOK_COOLDOWN = 300 -- 5 minutes between notifications for same brainrot
 
 -- Rarity order for brainrot dropdown
 local RARITY_ORDER = {
@@ -192,31 +234,28 @@ local STAGE_RARITIES = {
     "Celestial"
 }
 
--- Priority rarities for Auto Farm Ultra - NO COSMIC, only Secret, Divine, Celestial
+-- Priority rarities for Auto Farm Ultra
 local PRIORITY_RARITIES = {"Secret", "Divine", "Celestial"}
 
--- Get Player Base
+-- FIXED: Get Player Base
 local function getPlayerBase()
     local bases = Workspace:FindFirstChild("Bases")
     if not bases then return nil end
     
     for _, base in ipairs(bases:GetChildren()) do
         if base:IsA("Model") or base:IsA("Folder") then
-            local slots = base:FindFirstChild("Slots")
-            if slots then
-                local ownerAttr = base:GetAttribute("Owner")
-                if ownerAttr == player.UserId or ownerAttr == player.Name then
-                    return base
-                end
-                
-                local targetPart = base:IsA("Model") and base.PrimaryPart or base:FindFirstChildWhichIsA("BasePart", true)
-                if targetPart then
-                    local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
-                    if distance < 100 then
-                        return base
-                    end
-                end
+            local ownerAttr = base:GetAttribute("Owner")
+            if ownerAttr == player.UserId then
+                return base
             end
+        end
+    end
+    
+    for _, base in ipairs(bases:GetChildren()) do
+        if base.Name == tostring(player.UserId) or 
+           base.Name == player.Name or 
+           base.Name:find(tostring(player.UserId)) then
+            return base
         end
     end
     
@@ -227,10 +266,17 @@ local function getPlayerBase()
         if base:IsA("Model") or base:IsA("Folder") then
             local slots = base:FindFirstChild("Slots")
             if slots then
+                for _, slot in ipairs(slots:GetChildren()) do
+                    local ownerValue = slot:FindFirstChild("Owner")
+                    if ownerValue and (ownerValue.Value == player.Name or ownerValue.Value == player.UserId) then
+                        return base
+                    end
+                end
+                
                 local targetPart = base:IsA("Model") and base.PrimaryPart or base:FindFirstChildWhichIsA("BasePart", true)
                 if targetPart then
                     local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
-                    if distance < closestDistance then
+                    if distance < closestDistance and distance < 500 then
                         closestDistance = distance
                         closestBase = base
                     end
@@ -399,7 +445,6 @@ local function tweenBackToBase()
     local basePart = base:FindFirstChildWhichIsA("BasePart", true)
     if not basePart then return false end
     
-    -- Go through walls in reverse (Celestial to Common)
     for i = #STAGE_RARITIES, 1, -1 do
         if not autoFarmUltra then return false end
         
@@ -411,7 +456,6 @@ local function tweenBackToBase()
         end
     end
     
-    -- Final tween to base
     fastTweenToPosition(basePart.CFrame + Vector3.new(0, 5, 0))
     return true
 end
@@ -459,15 +503,12 @@ local function instantProximityPrompt(prompt)
     if not prompt then return false end
     if not prompt:IsA("ProximityPrompt") then return false end
     
-    -- Method 1: Direct input hold (fastest)
     prompt:InputHoldBegin()
-    task.wait(0.01) -- Minimal wait
+    task.wait(0.01)
     prompt:InputHoldEnd()
     
-    -- Method 2: Also try firing directly
     pcall(function()
         if prompt.HoldDuration > 0 then
-            -- For hold prompts, simulate instant completion
             local connection
             connection = RunService.Heartbeat:Connect(function()
                 if prompt and prompt.Parent then
@@ -517,7 +558,6 @@ local function emergencyHideFromWave()
     isHidingFromWave = true
     waveHidePosition = humanoidRootPart.CFrame
     
-    -- SUPER FAST tween to wall
     local targetCFrame = nearestWall.part.CFrame * CFrame.new(0, 0, -5)
     local emergencyTween = TweenService:Create(
         humanoidRootPart,
@@ -532,20 +572,18 @@ local function emergencyHideFromWave()
     return true
 end
 
--- NEW: Auto Farm Ultra Loop - Tweens to SECRET area (not Cosmic), collects 5, returns
+-- NEW: Auto Farm Ultra Loop
 local function autoFarmUltraLoop()
     print("Auto Farm Ultra Started!")
-    local maxBeforeReturn = 5 -- Collect exactly 5 then return
+    local maxBeforeReturn = 5
     
     while autoFarmUltra do
         local success, err = pcall(function()
-            -- PRIORITY 1: Check for waves
             local waveNearby, wavePart = isWaveNearby()
             if waveNearby then
                 print("Wave detected! Emergency hiding...")
                 emergencyHideFromWave()
                 
-                -- Wait until wave passes
                 while autoFarmUltra do
                     local stillNearby, _ = isWaveNearby()
                     if not stillNearby then
@@ -568,24 +606,20 @@ local function autoFarmUltraLoop()
                 return
             end
             
-            -- Step 1: Tween to SECRET area (through all VIP walls)
             print("Tweening to Secret area...")
             tweenToStageWallSequential("Secret", 0.4)
             
-            -- Step 2: Look for priority brainrots (Secret, Divine, Celestial)
             ultraFarmCollecting = true
             local brainrots = findPriorityBrainrots()
             
             if #brainrots > 0 then
                 print("Found", #brainrots, "priority brainrots!")
                 
-                -- Collect exactly 5 brainrots
                 local collected = 0
                 for i = 1, #brainrots do
                     if not autoFarmUltra then break end
                     if collected >= maxBeforeReturn then break end
                     
-                    -- Check for wave before each collection
                     local waveCheck, _ = isWaveNearby()
                     if waveCheck then
                         print("Wave approaching during collection!")
@@ -597,13 +631,10 @@ local function autoFarmUltraLoop()
                     local brainrot = brainrots[i]
                     print("Collecting:", brainrot.name, "(" .. brainrot.rarity .. ")")
                     
-                    -- Fast tween to brainrot
                     fastTweenToPosition(brainrot.cframe + Vector3.new(0, 3, 0))
                     task.wait(0.1)
                     
-                    -- TRULY INSTANT collect using proximity prompt
                     if brainrot.prompt then
-                        -- Use instant proximity or normal based on toggle
                         if instantProximityEnabled then
                             instantProximityPrompt(brainrot.prompt)
                         else
@@ -617,7 +648,6 @@ local function autoFarmUltraLoop()
                         firetouchinterest(humanoidRootPart, brainrot.part, 1)
                     end
                     
-                    -- Also fire remote if available
                     if UpdateCollectedBrainrots then
                         UpdateCollectedBrainrots:FireServer(brainrot.model)
                     end
@@ -627,11 +657,7 @@ local function autoFarmUltraLoop()
                 end
                 
                 print("Collected " .. collected .. " brainrots, returning to base...")
-                
-                -- Step 3: Return to base safely through VIP walls
                 tweenBackToBase()
-                
-                -- Wait at base before next cycle
                 task.wait(2)
             else
                 print("No priority brainrots found, waiting...")
@@ -655,30 +681,44 @@ local function autoFarmUltraLoop()
     isHidingFromWave = false
 end
 
--- FIXED: Auto Collect Cash - Only collects from YOUR base
+-- FIXED: Auto Collect Cash
 local function autoCollectCashLoop()
     local resetTimer = 0
-    local myBase = nil
+    local verifiedBase = nil
     
-    -- Get base once at start
-    myBase = getPlayerBase()
-    if not myBase then
-        warn("No base found! Auto Collect Cash disabled.")
-        autoCollectCash = false
-        return
-    end
-    
-    print("Auto Collect Cash started for base:", myBase.Name)
+    print("Auto Collect Cash initializing...")
     
     while autoCollectCash do
         local success, err = pcall(function()
-            -- Verify we still have our base
-            if not myBase or not myBase.Parent then
-                myBase = getPlayerBase()
-                if not myBase then return end
+            verifiedBase = getPlayerBase()
+            
+            if not verifiedBase then
+                warn("No base found! Waiting...")
+                return
             end
             
-            local slots = myBase:FindFirstChild("Slots")
+            local ownerAttr = verifiedBase:GetAttribute("Owner")
+            if ownerAttr ~= player.UserId then
+                local slots = verifiedBase:FindFirstChild("Slots")
+                local ownsSlot = false
+                
+                if slots then
+                    for _, slot in ipairs(slots:GetChildren()) do
+                        local ownerValue = slot:FindFirstChild("Owner")
+                        if ownerValue and (ownerValue.Value == player.Name or ownerValue.Value == player.UserId) then
+                            ownsSlot = true
+                            break
+                        end
+                    end
+                end
+                
+                if not ownsSlot then
+                    warn("Base ownership mismatch! Skipping...")
+                    return
+                end
+            end
+            
+            local slots = verifiedBase:FindFirstChild("Slots")
             if slots then
                 for i = 1, 40 do
                     if not autoCollectCash then break end
@@ -686,9 +726,8 @@ local function autoCollectCashLoop()
                     if slot then
                         local collectPart = slot:FindFirstChild("Collect")
                         if collectPart and collectPart:IsA("BasePart") then
-                            -- Only teleport if it's in your base (check distance)
-                            local distance = (collectPart.Position - myBase:GetPivot().Position).Magnitude
-                            if distance < 200 then -- Safety check
+                            local slotOwner = slot:FindFirstChild("Owner")
+                            if slotOwner and (slotOwner.Value == player.Name or slotOwner.Value == player.UserId) then
                                 collectPart.CFrame = humanoidRootPart.CFrame * CFrame.new(0, -3, 0)
                                 if CollectMoneyEvent then
                                     CollectMoneyEvent:FireServer()
@@ -705,7 +744,6 @@ local function autoCollectCashLoop()
             warn("Auto Collect Cash error:", err)
         end
         
-        -- Reset every 5 seconds
         resetTimer = resetTimer + 0.05
         if resetTimer >= 5 then
             character:BreakJoints()
@@ -713,46 +751,40 @@ local function autoCollectCashLoop()
             
             player.CharacterAdded:Wait()
             task.wait(0.5)
-            -- Character respawns at base naturally
         end
         
         task.wait(0.05)
     end
 end
 
--- FIXED: Arcade Event - Teleport Tickets (not coins)
+-- FIXED: Arcade Event - Teleport Tickets
 local function autoTeleportTicketsLoop()
     while autoTeleportTickets do
         local success, err = pcall(function()
             local arcadeTickets = Workspace:FindFirstChild("ArcadeEventTickets")
             if not arcadeTickets then return end
             
-            -- GetChildren()[2] as specified
             local ticketModels = arcadeTickets:GetChildren()
             if #ticketModels < 2 then return end
             
-            -- Iterate through all ticket models
             for i, ticketModel in ipairs(ticketModels) do
                 if not autoTeleportTickets then break end
                 
-                -- Path: ArcadeEventTickets -> Ticket -> Ticket -> TouchInterest
                 local ticket = ticketModel:FindFirstChild("Ticket")
                 if ticket then
                     local innerTicket = ticket:FindFirstChild("Ticket")
                     if innerTicket and innerTicket:IsA("BasePart") then
-                        -- Teleport to player
                         innerTicket.CFrame = humanoidRootPart.CFrame * CFrame.new(0, 0, -2)
                         
-                        -- Fire touch interest
                         firetouchinterest(humanoidRootPart, innerTicket, 0)
-                        task.wait(0.01) -- Faster
+                        task.wait(0.01)
                         firetouchinterest(humanoidRootPart, innerTicket, 1)
                     end
                 end
             end
         end)
         
-        task.wait(0.05) -- Faster loop
+        task.wait(0.05)
     end
 end
 
@@ -767,13 +799,10 @@ local function autoTeleportConsolesLoop()
                 if not autoTeleportConsoles then break end
                 
                 if consoleModel.Name == "Game Console" then
-                    -- Path: Game Console -> Game Console -> TouchInterest
                     local console = consoleModel:FindFirstChild("Game Console")
                     if console and console:IsA("BasePart") then
-                        -- Teleport to player
                         console.CFrame = humanoidRootPart.CFrame * CFrame.new(0, 0, -2)
                         
-                        -- Fire touch interest
                         firetouchinterest(humanoidRootPart, console, 0)
                         task.wait(0.01)
                         firetouchinterest(humanoidRootPart, console, 1)
@@ -786,30 +815,26 @@ local function autoTeleportConsolesLoop()
     end
 end
 
--- NEW: Instant Proximity Prompt Loop - Activates ALL proximity prompts instantly
+-- NEW: Instant Proximity Prompt Loop
 local function instantProximityLoop()
     while instantProximityEnabled do
         local success, err = pcall(function()
-            -- Find all proximity prompts near player
             local prompts = {}
             
-            -- Check workspace for proximity prompts
             for _, obj in ipairs(Workspace:GetDescendants()) do
                 if obj:IsA("ProximityPrompt") then
                     local parent = obj.Parent
                     if parent and parent:IsA("BasePart") then
                         local distance = (humanoidRootPart.Position - parent.Position).Magnitude
-                        if distance <= 10 then -- Within range
+                        if distance <= 10 then
                             table.insert(prompts, obj)
                         end
                     end
                 end
             end
             
-            -- Instantly activate all found prompts
             for _, prompt in ipairs(prompts) do
                 if prompt and prompt.Parent then
-                    -- Check if already being held
                     if not prompt.IsHeld then
                         instantProximityPrompt(prompt)
                     end
@@ -817,7 +842,7 @@ local function instantProximityLoop()
             end
         end)
         
-        task.wait(0.1) -- Check frequently
+        task.wait(0.1)
     end
 end
 
@@ -1071,7 +1096,7 @@ local function visibleHitboxLoop()
     end)
 end
 
--- ESP Functions
+-- Player ESP Functions
 local function createESP(targetPlayer)
     if targetPlayer == player then return end
     if espObjects[targetPlayer] then return end
@@ -1185,6 +1210,529 @@ local function espLoop()
     
     for p, _ in pairs(espObjects) do
         removeESP(p)
+    end
+end
+
+-- ============================================
+-- BRAINROT ESP SYSTEM
+-- ============================================
+
+local function createBrainrotESP(brainrotModel, rarity, name, position)
+    if brainrotESPObjects[brainrotModel] then return end
+    
+    local espFolder = Instance.new("Folder")
+    espFolder.Name = "BrainrotESP_" .. tostring(brainrotModel)
+    espFolder.Parent = playerGui
+    
+    local color = CONFIG.RARITY_COLORS[rarity] or CONFIG.COLORS.White
+    
+    local box = Instance.new("BoxHandleAdornment")
+    box.Name = "BrainrotBox"
+    box.Size = Vector3.new(4, 4, 4)
+    box.Color3 = color
+    box.Transparency = 0.3
+    box.ZIndex = 10
+    box.AlwaysOnTop = true
+    
+    local adornPart = brainrotModel:IsA("Model") and brainrotModel.PrimaryPart or brainrotModel:FindFirstChildWhichIsA("BasePart")
+    if not adornPart then
+        adornPart = Instance.new("Part")
+        adornPart.Name = "ESPAdornPart"
+        adornPart.Size = Vector3.new(1, 1, 1)
+        adornPart.Position = position
+        adornPart.Anchored = true
+        adornPart.CanCollide = false
+        adornPart.Transparency = 1
+        adornPart.Parent = Workspace.CurrentCamera
+        
+        task.delay(10, function()
+            if adornPart then adornPart:Destroy() end
+        end)
+    end
+    
+    box.Adornee = adornPart
+    box.Parent = espFolder
+    
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "BrainrotBillboard"
+    billboard.Size = UDim2.new(0, 200, 0, 60)
+    billboard.StudsOffset = Vector3.new(0, 5, 0)
+    billboard.AlwaysOnTop = true
+    
+    if adornPart then
+        billboard.Adornee = adornPart
+    end
+    billboard.Parent = espFolder
+    
+    if showBrainrotNames then
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Name = "BrainrotName"
+        nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
+        nameLabel.Position = UDim2.new(0, 0, 0, 0)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = name or "Unknown Brainrot"
+        nameLabel.TextColor3 = color
+        nameLabel.TextStrokeTransparency = 0
+        nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextSize = 14
+        nameLabel.Parent = billboard
+    end
+    
+    local rarityLabel = Instance.new("TextLabel")
+    rarityLabel.Name = "RarityLabel"
+    rarityLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    rarityLabel.Position = UDim2.new(0, 0, 0.5, 0)
+    rarityLabel.BackgroundTransparency = 1
+    rarityLabel.Text = "[" .. rarity .. "]"
+    rarityLabel.TextColor3 = color
+    rarityLabel.TextStrokeTransparency = 0
+    rarityLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+    rarityLabel.Font = Enum.Font.GothamBold
+    rarityLabel.TextSize = 12
+    rarityLabel.Parent = billboard
+    
+    if showBrainrotDistance then
+        local distLabel = Instance.new("TextLabel")
+        distLabel.Name = "DistanceLabel"
+        distLabel.Size = UDim2.new(1, 0, 0.3, 0)
+        distLabel.Position = UDim2.new(0, 0, 1, 0)
+        distLabel.BackgroundTransparency = 1
+        distLabel.Text = ""
+        distLabel.TextColor3 = CONFIG.COLORS.White
+        distLabel.TextStrokeTransparency = 0
+        distLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+        distLabel.Font = Enum.Font.Gotham
+        distLabel.TextSize = 10
+        distLabel.Parent = billboard
+        
+        task.spawn(function()
+            while distLabel and distLabel.Parent and brainrotESPEnabled do
+                if humanoidRootPart and adornPart then
+                    local dist = (humanoidRootPart.Position - adornPart.Position).Magnitude
+                    distLabel.Text = math.floor(dist) .. " studs"
+                    
+                    if dist > espMaxDistance then
+                        billboard.Enabled = false
+                    else
+                        billboard.Enabled = true
+                    end
+                end
+                task.wait(0.5)
+            end
+        end)
+    end
+    
+    brainrotESPObjects[brainrotModel] = {
+        folder = espFolder,
+        box = box,
+        billboard = billboard,
+        adornPart = adornPart
+    }
+    
+    return espFolder
+end
+
+local function removeBrainrotESP(brainrotModel)
+    if brainrotESPObjects[brainrotModel] then
+        brainrotESPObjects[brainrotModel].folder:Destroy()
+        brainrotESPObjects[brainrotModel] = nil
+    end
+end
+
+local function clearAllBrainrotESP()
+    for model, _ in pairs(brainrotESPObjects) do
+        removeBrainrotESP(model)
+    end
+    brainrotESPObjects = {}
+end
+
+local function brainrotESPLoop()
+    print("Brainrot ESP Started")
+    
+    while brainrotESPEnabled do
+        local success, err = pcall(function()
+            local activeBrainrots = Workspace:FindFirstChild("ActiveBrainrots")
+            if not activeBrainrots then return end
+            
+            local currentBrainrots = {}
+            
+            for _, rarity in ipairs(RARITY_ORDER) do
+                local folder = activeBrainrots:FindFirstChild(rarity)
+                if folder then
+                    for _, renderedBrainrot in ipairs(folder:GetChildren()) do
+                        if renderedBrainrot:IsA("Model") and renderedBrainrot.Name == "RenderedBrainrot" then
+                            for _, child in ipairs(renderedBrainrot:GetChildren()) do
+                                if child:IsA("Model") then
+                                    local brainrotName = child.Name
+                                    local targetPart = renderedBrainrot.PrimaryPart or renderedBrainrot:FindFirstChildWhichIsA("BasePart")
+                                    
+                                    if targetPart then
+                                        local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
+                                        
+                                        if distance <= espMaxDistance then
+                                            currentBrainrots[renderedBrainrot] = true
+                                            
+                                            if not brainrotESPObjects[renderedBrainrot] then
+                                                createBrainrotESP(renderedBrainrot, rarity, brainrotName, targetPart.Position)
+                                            end
+                                        else
+                                            if brainrotESPObjects[renderedBrainrot] then
+                                                removeBrainrotESP(renderedBrainrot)
+                                            end
+                                        end
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            for model, _ in pairs(brainrotESPObjects) do
+                if not currentBrainrots[model] or not model.Parent then
+                    removeBrainrotESP(model)
+                end
+            end
+        end)
+        
+        if not success then
+            warn("Brainrot ESP error:", err)
+        end
+        
+        task.wait(1)
+    end
+    
+    clearAllBrainrotESP()
+    print("Brainrot ESP Stopped")
+end
+
+-- ============================================
+-- VIP WALL BYPASS
+-- ============================================
+
+local function bypassVIPWalls()
+    local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
+    if not defaultMap then return false end
+    
+    local vipWalls = defaultMap:FindFirstChild("VIPWalls")
+    if not vipWalls then return false end
+    
+    local count = 0
+    
+    for _, wall in ipairs(vipWalls:GetDescendants()) do
+        if wall:IsA("BasePart") then
+            wall.CanCollide = false
+            wall.CanQuery = false
+            count = count + 1
+        end
+        
+        if wall:IsA("TouchTransmitter") or wall:IsA("TouchInterest") then
+            wall:Destroy()
+            count = count + 1
+        end
+    end
+    
+    for _, wall in ipairs(vipWalls:GetChildren()) do
+        if wall:IsA("Model") then
+            for _, part in ipairs(wall:GetDescendants()) do
+                if part:IsA("BasePart") and (part.Name:find("Glass") or part.Name:find("Door")) then
+                    part.CanCollide = false
+                    part.Transparency = 0.9
+                end
+                
+                if part:IsA("ProximityPrompt") then
+                    part.Enabled = false
+                    part:Destroy()
+                end
+            end
+        end
+    end
+    
+    print("VIP Wall Bypass applied to", count, "parts")
+    return true
+end
+
+local function restoreVIPWalls()
+    local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
+    if not defaultMap then return end
+    
+    local vipWalls = defaultMap:FindFirstChild("VIPWalls")
+    if not vipWalls then return end
+    
+    for _, wall in ipairs(vipWalls:GetDescendants()) do
+        if wall:IsA("BasePart") then
+            wall.CanCollide = true
+            wall.CanQuery = true
+            
+            if wall.Name:find("Glass") or wall.Name:find("Door") then
+                wall.Transparency = 0.5
+            end
+        end
+    end
+    
+    print("VIP Walls restored")
+end
+
+local function vipWallNoclipLoop()
+    while vipWallNoclip do
+        bypassVIPWalls()
+        task.wait(5)
+    end
+    
+    restoreVIPWalls()
+end
+
+-- ============================================
+-- NEW: FPS OPTIMIZER
+-- ============================================
+
+local function optimizeFPS()
+    if fpsOptimized then return end
+    
+    -- Save original settings
+    originalSettings = {
+        QualityLevel = settings().Rendering.QualityLevel,
+        Shadows = Lighting.GlobalShadows,
+        Technology = settings().Rendering.MeshPartDetailLevel,
+        Particles = true,
+        Textures = true
+    }
+    
+    -- Lower render quality
+    settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+    
+    -- Disable shadows
+    Lighting.GlobalShadows = false
+    
+    -- Lower mesh detail
+    settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
+    
+    -- Remove unnecessary effects
+    for _, effect in ipairs(Lighting:GetChildren()) do
+        if effect:IsA("PostEffect") then
+            effect.Enabled = false
+        end
+    end
+    
+    -- Optimize workspace
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            -- Disable casting shadows on parts
+            obj.CastShadow = false
+            
+            -- Reduce texture quality
+            if obj:IsA("MeshPart") then
+                obj.TextureID = ""
+            end
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+            obj.Enabled = false
+        elseif obj:IsA("Decal") or obj:IsA("Texture") then
+            obj.Transparency = 1
+        end
+    end
+    
+    fpsOptimized = true
+    print("FPS Optimized!")
+end
+
+local function restoreFPS()
+    if not fpsOptimized then return end
+    
+    settings().Rendering.QualityLevel = originalSettings.QualityLevel
+    Lighting.GlobalShadows = originalSettings.Shadows
+    settings().Rendering.MeshPartDetailLevel = originalSettings.Technology
+    
+    for _, effect in ipairs(Lighting:GetChildren()) do
+        if effect:IsA("PostEffect") then
+            effect.Enabled = true
+        end
+    end
+    
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            obj.CastShadow = true
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+            obj.Enabled = true
+        elseif obj:IsA("Decal") or obj:IsA("Texture") then
+            obj.Transparency = 0
+        end
+    end
+    
+    fpsOptimized = false
+    print("FPS Settings Restored")
+end
+
+-- ============================================
+-- NEW: SERVER HOPPER
+-- ============================================
+
+local function getServerList()
+    local success, result = pcall(function()
+        local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+        return HttpService:JSONDecode(game:HttpGet(url))
+    end)
+    
+    if success and result and result.data then
+        return result.data
+    else
+        warn("Failed to get server list")
+        return {}
+    end
+end
+
+local function hopToLowestPlayerServer()
+    if serverHopInProgress then return end
+    serverHopInProgress = true
+    
+    print("Finding server with lowest players...")
+    
+    local servers = getServerList()
+    if #servers == 0 then
+        warn("No servers found")
+        serverHopInProgress = false
+        return
+    end
+    
+    -- Find server with lowest players
+    local targetServer = nil
+    local lowestPlayers = math.huge
+    
+    for _, server in ipairs(servers) do
+        if server.playing < server.maxPlayers and server.playing < lowestPlayers then
+            lowestPlayers = server.playing
+            targetServer = server
+        end
+    end
+    
+    if targetServer then
+        print("Teleporting to server with", lowestPlayers, "players...")
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, targetServer.id, player)
+    else
+        warn("No suitable server found")
+    end
+    
+    serverHopInProgress = false
+end
+
+local function rejoinServer()
+    print("Rejoining current server...")
+    TeleportService:Teleport(game.PlaceId, player)
+end
+
+-- ============================================
+-- NEW: DISCORD WEBHOOK SYSTEM
+-- ============================================
+
+local function sendDiscordWebhook(embedData)
+    if not webhookEnabled or webhookURL == "" then return end
+    
+    local success, err = pcall(function()
+        local data = {
+            embeds = {embedData}
+        }
+        
+        local headers = {
+            ["Content-Type"] = "application/json"
+        }
+        
+        local request = (syn and syn.request) or (http and http.request) or request
+        if request then
+            request({
+                Url = webhookURL,
+                Method = "POST",
+                Headers = headers,
+                Body = HttpService:JSONEncode(data)
+            })
+        else
+            -- Fallback for executors without request function
+            game:HttpPost(webhookURL, HttpService:JSONEncode(data), false, headers)
+        end
+    end)
+    
+    if not success then
+        warn("Webhook failed:", err)
+    end
+end
+
+local function checkForRareBrainrots()
+    local activeBrainrots = Workspace:FindFirstChild("ActiveBrainrots")
+    if not activeBrainrots then return end
+    
+    local rareRarities = {"Celestial", "Divine", "Secret"}
+    
+    for _, rarity in ipairs(rareRarities) do
+        local folder = activeBrainrots:FindFirstChild(rarity)
+        if folder then
+            for _, renderedBrainrot in ipairs(folder:GetChildren()) do
+                if renderedBrainrot:IsA("Model") and renderedBrainrot.Name == "RenderedBrainrot" then
+                    for _, child in ipairs(renderedBrainrot:GetChildren()) do
+                        if child:IsA("Model") then
+                            local brainrotName = child.Name
+                            local uniqueId = tostring(renderedBrainrot)
+                            
+                            -- Check if already notified (cooldown)
+                            if not notifiedBrainrots[uniqueId] or (tick() - notifiedBrainrots[uniqueId]) > WEBHOOK_COOLDOWN then
+                                notifiedBrainrots[uniqueId] = tick()
+                                
+                                -- Get server info
+                                local playerCount = #Players:GetPlayers()
+                                local maxPlayers = Players.MaxPlayers
+                                local serverId = game.JobId
+                                
+                                -- Create join link
+                                local joinLink = "https://www.roblox.com/games/start?placeId=" .. game.PlaceId .. "&launchData=" .. serverId
+                                
+                                local embed = {
+                                    title = "🚨 Rare Brainrot Spawned! 🚨",
+                                    description = "A rare brainrot has been detected in a server!",
+                                    color = CONFIG.RARITY_COLORS[rarity]:ToHex(),
+                                    fields = {
+                                        {
+                                            name = "Brainrot Name",
+                                            value = brainrotName,
+                                            inline = true
+                                        },
+                                        {
+                                            name = "Rarity",
+                                            value = rarity,
+                                            inline = true
+                                        },
+                                        {
+                                            name = "Server Players",
+                                            value = playerCount .. "/" .. maxPlayers,
+                                            inline = true
+                                        },
+                                        {
+                                            name = "Join Server",
+                                            value = "[Click to Join](" .. joinLink .. ")",
+                                            inline = false
+                                        }
+                                    },
+                                    timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+                                    footer = {
+                                        text = "Nexus Brainrot Tracker v12"
+                                    }
+                                }
+                                
+                                sendDiscordWebhook(embed)
+                                print("Webhook sent for", brainrotName, "(" .. rarity .. ")")
+                            end
+                            
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function webhookCheckLoop()
+    while webhookEnabled do
+        pcall(checkForRareBrainrots)
+        task.wait(10) -- Check every 10 seconds
     end
 end
 
@@ -1468,8 +2016,8 @@ local function createGUI()
 
         local mainFrame = Instance.new("Frame")
         mainFrame.Name = "MainFrame"
-        mainFrame.Size = UDim2.new(0, 750, 0, 500)
-        mainFrame.Position = UDim2.new(0.5, -375, 0.5, -250)
+        mainFrame.Size = UDim2.new(0, 850, 0, 600)
+        mainFrame.Position = UDim2.new(0.5, -425, 0.5, -300)
         mainFrame.BackgroundColor3 = CONFIG.COLORS.Background
         mainFrame.BackgroundTransparency = CONFIG.COLORS.BackgroundTransparency
         mainFrame.BorderSizePixel = 0
@@ -1501,7 +2049,7 @@ local function createGUI()
         titleLabel.Position = UDim2.new(0, 20, 0, 0)
         titleLabel.BackgroundTransparency = 1
         titleLabel.Font = Enum.Font.GothamBold
-        titleLabel.Text = CONFIG.TITLE
+        titleLabel.Text = CONFIG.TITLE .. " v12"
         titleLabel.TextColor3 = CONFIG.COLORS.White
         titleLabel.TextSize = 16
         titleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1536,10 +2084,16 @@ local function createGUI()
             espEnabled = false
             autoTeleportTickets = false
             autoTeleportConsoles = false
+            brainrotESPEnabled = false
+            vipWallBypassEnabled = false
+            vipWallNoclip = false
+            webhookEnabled = false
             
             if autoClickerButton then
                 autoClickerButton:Destroy()
             end
+            
+            clearAllBrainrotESP()
             
             for p, _ in pairs(espObjects) do
                 if espObjects[p] then
@@ -1651,9 +2205,11 @@ local function createGUI()
         -- Create all tabs
         local automationTab = createTab("Automation", "⚡")
         local combatTab = createTab("Combat", "⚔️")
+        local visualTab = createTab("Visual", "👁️")
         local eventTab = createTab("Event", "🎉")
         local stagesTab = createTab("Stages", "🏆")
         local sellTab = createTab("Sell", "💰")
+        local serverTab = createTab("Server", "🌐") -- NEW: Server tab
         local settingsTab = createTab("Settings", "⚙️")
 
         print("Tabs created")
@@ -1888,10 +2444,10 @@ local function createGUI()
             return frame
         end
 
-        local function createButton(parent, name, callback)
+        local function createButton(parent, name, callback, color)
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(1, -20, 0, 45)
-            btn.BackgroundColor3 = CONFIG.COLORS.Accent
+            btn.BackgroundColor3 = color or CONFIG.COLORS.Accent
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.Text = name
@@ -1908,7 +2464,7 @@ local function createGUI()
             end)
             
             btn.MouseLeave:Connect(function()
-                TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = CONFIG.COLORS.Accent}):Play()
+                TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = color or CONFIG.COLORS.Accent}):Play()
             end)
             
             btn.MouseButton1Click:Connect(function()
@@ -1919,6 +2475,56 @@ local function createGUI()
             end)
             
             return btn
+        end
+
+        local function createTextBox(parent, name, placeholder, callback)
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(1, -20, 0, 80)
+            frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
+            frame.BackgroundTransparency = 0.3
+            frame.BorderSizePixel = 0
+            frame.Parent = parent
+            
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 12)
+            corner.Parent = frame
+            
+            local title = Instance.new("TextLabel")
+            title.Size = UDim2.new(1, -30, 0, 25)
+            title.Position = UDim2.new(0, 15, 0, 10)
+            title.BackgroundTransparency = 1
+            title.Font = Enum.Font.GothamBold
+            title.Text = name
+            title.TextColor3 = CONFIG.COLORS.White
+            title.TextSize = 14
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = frame
+            
+            local textBox = Instance.new("TextBox")
+            textBox.Size = UDim2.new(1, -30, 0, 30)
+            textBox.Position = UDim2.new(0, 15, 0, 40)
+            textBox.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            textBox.BorderSizePixel = 0
+            textBox.Font = Enum.Font.Gotham
+            textBox.Text = ""
+            textBox.PlaceholderText = placeholder
+            textBox.TextColor3 = CONFIG.COLORS.White
+            textBox.PlaceholderColor3 = CONFIG.COLORS.Gray
+            textBox.TextSize = 12
+            textBox.ClearTextOnFocus = false
+            textBox.Parent = frame
+            
+            local textCorner = Instance.new("UICorner")
+            textCorner.CornerRadius = UDim.new(0, 8)
+            textCorner.Parent = textBox
+            
+            textBox.FocusLost:Connect(function(enterPressed)
+                if enterPressed then
+                    callback(textBox.Text)
+                end
+            end)
+            
+            return frame
         end
 
         -- NEW: Create Section Header
@@ -1967,7 +2573,6 @@ local function createGUI()
             end
         end)
 
-        -- NEW: Auto Farm Ultra Toggle - Tweens to SECRET area
         createToggle(automationTab, "Auto Farm Ultra", "Farms Secret/Divine/Celestial, collects 5, returns", function(enabled)
             autoFarmUltra = enabled
             if enabled then
@@ -1975,7 +2580,6 @@ local function createGUI()
             end
         end)
 
-        -- NEW: Instant Proximity Prompt Toggle
         createToggle(automationTab, "Instant Proximity Prompts", "Instantly activates all nearby prompts", function(enabled)
             instantProximityEnabled = enabled
             if enabled then
@@ -2075,8 +2679,60 @@ local function createGUI()
             end
         end)
 
+        -- ==================== VISUAL TAB ====================
+        createSection(visualTab, "BRAINROT ESP")
+        
+        createToggle(visualTab, "Brainrot ESP", "Shows ESP boxes on all brainrots with rarity colors", function(enabled)
+            brainrotESPEnabled = enabled
+            if enabled then
+                task.spawn(brainrotESPLoop)
+            else
+                clearAllBrainrotESP()
+            end
+        end)
+        
+        createToggle(visualTab, "Show Brainrot Names", "Display brainrot names on ESP", function(enabled)
+            showBrainrotNames = enabled
+        end)
+        
+        createToggle(visualTab, "Show Distance", "Show distance to brainrots", function(enabled)
+            showBrainrotDistance = enabled
+        end)
+        
+        createSlider(visualTab, "ESP Max Distance", "Maximum distance to show ESP", 100, 5000, 1000, function(value)
+            espMaxDistance = value
+        end)
+        
+        createSection(visualTab, "VIP WALL BYPASS")
+        
+        createToggle(visualTab, "VIP Wall Bypass", "Removes collision from VIP walls (walk through)", function(enabled)
+            vipWallBypassEnabled = enabled
+            if enabled then
+                bypassVIPWalls()
+            else
+                restoreVIPWalls()
+            end
+        end)
+        
+        createToggle(visualTab, "Persistent VIP Noclip", "Continuously bypass walls (for respawning walls)", function(enabled)
+            vipWallNoclip = enabled
+            if enabled then
+                task.spawn(vipWallNoclipLoop)
+            else
+                restoreVIPWalls()
+            end
+        end)
+        
+        createButton(visualTab, "Force Bypass VIP Walls Now", function()
+            local success = bypassVIPWalls()
+            if success then
+                print("VIP Walls bypassed successfully!")
+            else
+                warn("Failed to find VIP walls")
+            end
+        end)
+
         -- ==================== EVENT TAB ====================
-        -- ARCADE Section
         createSection(eventTab, "ARCADE")
         
         createToggle(eventTab, "Auto Teleport Tickets", "Teleports arcade tickets to you", function(enabled)
@@ -2093,7 +2749,6 @@ local function createGUI()
             end
         end)
 
-        -- MONEY Section
         createSection(eventTab, "MONEY")
 
         createToggle(eventTab, "Auto Complete Obby", "Auto completes all 3 obbies", function(enabled)
@@ -2159,7 +2814,118 @@ local function createGUI()
             end
         end)
 
+        -- ==================== SERVER TAB (NEW) ====================
+        createSection(serverTab, "SERVER MANAGEMENT")
+        
+        createButton(serverTab, "🔄 Rejoin Current Server", function()
+            rejoinServer()
+        end, Color3.fromRGB(88, 101, 242))
+        
+        createButton(serverTab, "🌐 Hop to Lowest Player Server", function()
+            hopToLowestPlayerServer()
+        end, Color3.fromRGB(87, 242, 135))
+        
+        createSection(serverTab, "SERVER INFO")
+        
+        local serverInfoFrame = Instance.new("Frame")
+        serverInfoFrame.Size = UDim2.new(1, -20, 0, 100)
+        serverInfoFrame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
+        serverInfoFrame.BackgroundTransparency = 0.3
+        serverInfoFrame.BorderSizePixel = 0
+        serverInfoFrame.Parent = serverTab
+        
+        local infoCorner = Instance.new("UICorner")
+        infoCorner.CornerRadius = UDim.new(0, 12)
+        infoCorner.Parent = serverInfoFrame
+        
+        local playerCountLabel = Instance.new("TextLabel")
+        playerCountLabel.Size = UDim2.new(1, -20, 0, 25)
+        playerCountLabel.Position = UDim2.new(0, 10, 0, 10)
+        playerCountLabel.BackgroundTransparency = 1
+        playerCountLabel.Font = Enum.Font.GothamBold
+        playerCountLabel.Text = "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
+        playerCountLabel.TextColor3 = CONFIG.COLORS.White
+        playerCountLabel.TextSize = 14
+        playerCountLabel.TextXAlignment = Enum.TextXAlignment.Left
+        playerCountLabel.Parent = serverInfoFrame
+        
+        local serverIdLabel = Instance.new("TextLabel")
+        serverIdLabel.Size = UDim2.new(1, -20, 0, 25)
+        serverIdLabel.Position = UDim2.new(0, 10, 0, 40)
+        serverIdLabel.BackgroundTransparency = 1
+        serverIdLabel.Font = Enum.Font.Gotham
+        serverIdLabel.Text = "Server ID: " .. string.sub(game.JobId, 1, 8) .. "..."
+        serverIdLabel.TextColor3 = CONFIG.COLORS.Gray
+        serverIdLabel.TextSize = 12
+        serverIdLabel.TextXAlignment = Enum.TextXAlignment.Left
+        serverIdLabel.Parent = serverInfoFrame
+        
+        local pingLabel = Instance.new("TextLabel")
+        pingLabel.Size = UDim2.new(1, -20, 0, 25)
+        pingLabel.Position = UDim2.new(0, 10, 0, 70)
+        pingLabel.BackgroundTransparency = 1
+        pingLabel.Font = Enum.Font.Gotham
+        pingLabel.Text = "Ping: Calculating..."
+        pingLabel.TextColor3 = CONFIG.COLORS.Gray
+        pingLabel.TextSize = 12
+        pingLabel.TextXAlignment = Enum.TextXAlignment.Left
+        pingLabel.Parent = serverInfoFrame
+        
+        -- Update ping
+        task.spawn(function()
+            while serverInfoFrame and serverInfoFrame.Parent do
+                local ping = player:GetNetworkPing() * 1000
+                pingLabel.Text = "Ping: " .. math.floor(ping) .. " ms"
+                task.wait(5)
+            end
+        end)
+        
+        -- Update player count
+        Players.PlayerAdded:Connect(function()
+            if playerCountLabel and playerCountLabel.Parent then
+                playerCountLabel.Text = "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
+            end
+        end)
+        
+        Players.PlayerRemoving:Connect(function()
+            if playerCountLabel and playerCountLabel.Parent then
+                playerCountLabel.Text = "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
+            end
+        end)
+
         -- ==================== SETTINGS TAB ====================
+        createSection(settingsTab, "FPS OPTIMIZER")
+        
+        createToggle(settingsTab, "Optimize FPS", "Lowers graphics quality for better performance", function(enabled)
+            if enabled then
+                optimizeFPS()
+            else
+                restoreFPS()
+            end
+        end)
+        
+        createSection(settingsTab, "DISCORD WEBHOOK")
+        
+        createTextBox(settingsTab, "Webhook URL", "Paste your Discord webhook URL here...", function(text)
+            webhookURL = text
+            print("Webhook URL set!")
+        end)
+        
+        createToggle(settingsTab, "Enable Webhook Notifications", "Sends alerts when Celestial/Divine/Secret spawn", function(enabled)
+            webhookEnabled = enabled
+            if enabled then
+                if webhookURL == "" then
+                    warn("Please set webhook URL first!")
+                    webhookEnabled = false
+                    return
+                end
+                task.spawn(webhookCheckLoop)
+                print("Webhook notifications enabled!")
+            end
+        end)
+        
+        createSection(settingsTab, "WAVE PROTECTION")
+        
         createToggle(settingsTab, "Wave Protection (VIP Walls)", "Stays in VIP walls until wave passes", function(enabled)
             waveProtectionEnabled = enabled
             if enabled then
@@ -2171,8 +2937,10 @@ local function createGUI()
             waveProtectionRange = value
         end)
 
+        createSection(settingsTab, "MISC")
+        
         createButton(settingsTab, "📋 Copy Discord Link", function()
-            local discordLink = "https://discord.gg/nexus"
+            local discordLink = "https://discord.gg/nexus "
             if setclipboard then
                 setclipboard(discordLink)
                 print("Discord link copied!")
@@ -2214,6 +2982,10 @@ player.CharacterAdded:Connect(function(newChar)
     character = newChar
     humanoidRootPart = character:WaitForChild("HumanoidRootPart")
     humanoid = character:WaitForChild("Humanoid")
+    
+    if vipWallBypassEnabled then
+        task.delay(1, bypassVIPWalls)
+    end
 end)
 
 -- CRITICAL: Delay GUI creation
