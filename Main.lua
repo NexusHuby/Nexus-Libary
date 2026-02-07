@@ -1,5 +1,6 @@
 --[[
-    Nexus|Escape Tsunami for Brainrots - Complete Edition Fixed v4
+    Nexus|Escape Tsunami for Brainrots - Complete Edition Fixed v5
+    Added: Stages Tab with VIP Wall Tweening
 ]]
 
 local Players = game:GetService("Players")
@@ -140,6 +141,11 @@ local autoClickerButton = nil
 -- NEW: Auto Spawn Machine Variables
 local autoSpawnMachine = false
 
+-- NEW: Stages Tab Variables
+local selectedStage = nil
+local autoTweenToStage = false
+local isTweeningToStage = false
+
 -- Rarity order for brainrot dropdown
 local RARITY_ORDER = {
     "Celestial",
@@ -153,6 +159,19 @@ local RARITY_ORDER = {
     "Rare",
     "Uncommon",
     "Common"
+}
+
+-- Stages/Rarities for VIP Walls
+local STAGE_RARITIES = {
+    "Common",
+    "Uncommon", 
+    "Rare",
+    "Epic",
+    "Legendary",
+    "Mythical",
+    "Cosmic",
+    "Secret",
+    "Celestial"
 }
 
 -- Get Player Base
@@ -300,6 +319,60 @@ local function findBrainrotInActive(brainrotName, rarity)
     return nil
 end
 
+-- NEW: Get VIP Wall for specific rarity/stage
+local function getVIPWallForRarity(rarity)
+    local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
+    if not defaultMap then
+        warn("DefaultMap_SharedInstances not found!")
+        return nil
+    end
+    
+    local vipWalls = defaultMap:FindFirstChild("VIPWalls")
+    if not vipWalls then
+        warn("VIPWalls folder not found!")
+        return nil
+    end
+    
+    -- Look for wall with matching rarity name
+    for _, wall in ipairs(vipWalls:GetChildren()) do
+        if wall:IsA("BasePart") or wall:IsA("Model") then
+            -- Check if wall name contains the rarity
+            if wall.Name:find(rarity) or wall.Name:lower():find(rarity:lower()) then
+                local targetPart = wall:IsA("BasePart") and wall or wall.PrimaryPart or wall:FindFirstChildWhichIsA("BasePart")
+                if targetPart then
+                    return {
+                        part = targetPart,
+                        model = wall:IsA("Model") and wall or nil,
+                        name = wall.Name,
+                        rarity = rarity
+                    }
+                end
+            end
+        end
+    end
+    
+    -- If no specific match, try to find by order in the folder
+    local rarityIndex = table.find(STAGE_RARITIES, rarity)
+    if rarityIndex then
+        local walls = vipWalls:GetChildren()
+        if walls[rarityIndex] then
+            local wall = walls[rarityIndex]
+            local targetPart = wall:IsA("BasePart") and wall or wall.PrimaryPart or wall:FindFirstChildWhichIsA("BasePart")
+            if targetPart then
+                return {
+                    part = targetPart,
+                    model = wall:IsA("Model") and wall or nil,
+                    name = wall.Name,
+                    rarity = rarity
+                }
+            end
+        end
+    end
+    
+    warn("VIP Wall not found for rarity:", rarity)
+    return nil
+end
+
 -- Check if position is safe
 local function isPositionSafe(position)
     if position.Y < 10 then
@@ -376,6 +449,83 @@ local function safeTweenToPosition(targetPosition, targetCFrame, useGapIfNeeded)
     finalTween.Completed:Wait()
     
     return true
+end
+
+-- NEW: Tween to VIP Wall for selected stage
+local function tweenToStageWall()
+    if not selectedStage then
+        warn("No stage selected!")
+        return false
+    end
+    
+    if isTweeningToStage then
+        warn("Already tweening to a stage!")
+        return false
+    end
+    
+    isTweeningToStage = true
+    
+    local success, result = pcall(function()
+        local wallData = getVIPWallForRarity(selectedStage)
+        if not wallData then
+            warn("Could not find VIP wall for stage:", selectedStage)
+            return false
+        end
+        
+        print("Tweening to", selectedStage, "wall at position:", wallData.part.Position)
+        
+        -- Store position before tweening
+        local returnPosition = humanoidRootPart.CFrame
+        
+        -- Tween to wall position (slightly in front of it)
+        local targetCFrame = wallData.part.CFrame * CFrame.new(0, 0, -5) -- 5 studs in front
+        
+        -- Use safe tween with gap avoidance
+        safeTweenToPosition(wallData.part.Position, targetCFrame, true)
+        
+        print("Arrived at", selectedStage, "wall")
+        return true
+    end)
+    
+    isTweeningToStage = false
+    
+    if not success then
+        warn("Error tweening to stage:", result)
+        return false
+    end
+    
+    return result
+end
+
+-- NEW: Auto Tween to Stage Loop
+local function autoTweenToStageLoop()
+    print("Auto Tween to Stage started for:", selectedStage)
+    
+    while autoTweenToStage do
+        local success, err = pcall(function()
+            if not selectedStage then
+                task.wait(2)
+                return
+            end
+            
+            -- Check if we're already near the wall
+            local wallData = getVIPWallForRarity(selectedStage)
+            if wallData then
+                local distance = (humanoidRootPart.Position - wallData.part.Position).Magnitude
+                if distance > 10 then
+                    tweenToStageWall()
+                end
+            end
+        end)
+        
+        if not success then
+            warn("Auto tween to stage error:", err)
+        end
+        
+        task.wait(3) -- Check every 3 seconds
+    end
+    
+    print("Auto Tween to Stage stopped")
 end
 
 -- Auto Collect Specific Brainrot Loop
@@ -455,7 +605,7 @@ local function smartGapLoop()
     
     while autoGapEnabled do
         local success, err = pcall(function()
-            if isCollectingBrainrot then
+            if isCollectingBrainrot or isTweeningToStage then
                 task.wait(0.5)
                 return
             end
@@ -1470,6 +1620,7 @@ closeBtn.MouseButton1Click:Connect(function()
     autoClickerEnabled = false
     autoSpinWheel = false
     autoSpawnMachine = false
+    autoTweenToStage = false
     espEnabled = false
     
     if autoClickerButton then
@@ -1536,19 +1687,27 @@ local function createTab(name, icon)
     tabCorner.CornerRadius = UDim.new(0, 10)
     tabCorner.Parent = tabBtn
     
+    -- FIXED: Increased scrolling frame size to fix cutoff issue
     local contentFrame = Instance.new("ScrollingFrame")
     contentFrame.Name = name .. "Content"
     contentFrame.Size = UDim2.new(1, 0, 1, 0)
     contentFrame.BackgroundTransparency = 1
     contentFrame.BorderSizePixel = 0
-    contentFrame.ScrollBarThickness = 4
+    contentFrame.ScrollBarThickness = 6
     contentFrame.ScrollBarImageColor3 = CONFIG.COLORS.Accent
     contentFrame.Visible = false
+    contentFrame.CanvasSize = UDim2.new(0, 0, 0, 1000) -- Will auto-adjust
+    contentFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y -- Auto size canvas
     contentFrame.Parent = contentContainer
     
     local listLayout = Instance.new("UIListLayout")
     listLayout.Padding = UDim.new(0, 10)
     listLayout.Parent = contentFrame
+    
+    -- Update canvas size when children change
+    listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        contentFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 20)
+    end)
     
     tabBtn.MouseButton1Click:Connect(function()
         if currentTab == contentFrame then return end
@@ -1577,6 +1736,7 @@ end
 local automationTab = createTab("Automation", "⚡")
 local combatTab = createTab("Combat", "⚔️")
 local eventTab = createTab("Event", "🎉")
+local stagesTab = createTab("Stages", "🏆") -- NEW STAGES TAB
 local sellTab = createTab("Sell", "💰")
 local settingsTab = createTab("Settings", "⚙️")
 
@@ -2128,6 +2288,219 @@ local function createDropdown(parent, name, getOptionsFunc, callback)
     return frame, refreshOptions
 end
 
+-- NEW: Create Stage Selector Dropdown
+local function createStageDropdown(parent, name, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -20, 0, 80)
+    frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
+    frame.BackgroundTransparency = 0.3
+    frame.BorderSizePixel = 0
+    frame.ClipsDescendants = false
+    frame.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -30, 0, 25)
+    title.Position = UDim2.new(0, 15, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = name
+    title.TextColor3 = CONFIG.COLORS.White
+    title.TextSize = 14
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+    
+    local dropdownBtn = Instance.new("TextButton")
+    dropdownBtn.Size = UDim2.new(1, -30, 0, 32)
+    dropdownBtn.Position = UDim2.new(0, 15, 0, 40)
+    dropdownBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    dropdownBtn.BorderSizePixel = 0
+    dropdownBtn.Font = Enum.Font.Gotham
+    dropdownBtn.Text = "🏆 Select Stage..."
+    dropdownBtn.TextColor3 = CONFIG.COLORS.Gray
+    dropdownBtn.TextSize = 12
+    dropdownBtn.Parent = frame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 8)
+    btnCorner.Parent = dropdownBtn
+    
+    -- Dropdown container
+    local dropdownContainer = Instance.new("Frame")
+    dropdownContainer.Name = "StageDropdownContainer"
+    dropdownContainer.Size = UDim2.new(0, 280, 0, 0)
+    dropdownContainer.Position = UDim2.new(0, frame.AbsolutePosition.X + 15, 0, 0)
+    dropdownContainer.BackgroundColor3 = CONFIG.COLORS.DropdownBg
+    dropdownContainer.BorderSizePixel = 0
+    dropdownContainer.Visible = false
+    dropdownContainer.ZIndex = 1000
+    dropdownContainer.Parent = screenGui
+    
+    local containerCorner = Instance.new("UICorner")
+    containerCorner.CornerRadius = UDim.new(0, 12)
+    containerCorner.Parent = dropdownContainer
+    
+    local containerStroke = Instance.new("UIStroke")
+    containerStroke.Color = CONFIG.COLORS.Accent
+    containerStroke.Thickness = 2
+    containerStroke.Parent = dropdownContainer
+    
+    -- Scrolling frame for options
+    local scrollingFrame = Instance.new("ScrollingFrame")
+    scrollingFrame.Size = UDim2.new(1, -20, 1, -20)
+    scrollingFrame.Position = UDim2.new(0, 10, 0, 10)
+    scrollingFrame.BackgroundTransparency = 1
+    scrollingFrame.BorderSizePixel = 0
+    scrollingFrame.ScrollBarThickness = 6
+    scrollingFrame.ScrollBarImageColor3 = CONFIG.COLORS.Accent
+    scrollingFrame.ZIndex = 1001
+    scrollingFrame.Parent = dropdownContainer
+    
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0, 4)
+    listLayout.Parent = scrollingFrame
+    
+    local currentSelection = nil
+    local isOpen = false
+    
+    local rarityColors = {
+        Common = Color3.fromRGB(169, 169, 169),
+        Uncommon = Color3.fromRGB(0, 255, 0),
+        Rare = Color3.fromRGB(0, 100, 255),
+        Epic = Color3.fromRGB(150, 0, 255),
+        Legendary = Color3.fromRGB(255, 215, 0),
+        Mythical = Color3.fromRGB(255, 0, 100),
+        Cosmic = Color3.fromRGB(0, 255, 255),
+        Secret = Color3.fromRGB(255, 0, 0),
+        Celestial = Color3.fromRGB(255, 255, 0)
+    }
+    
+    local function updatePosition()
+        local absPos = frame.AbsolutePosition
+        dropdownContainer.Position = UDim2.new(0, absPos.X + 15, 0, absPos.Y + 75)
+    end
+    
+    local function populateOptions()
+        for _, child in ipairs(scrollingFrame:GetChildren()) do
+            if child:IsA("TextButton") then
+                child:Destroy()
+            end
+        end
+        
+        for i, rarity in ipairs(STAGE_RARITIES) do
+            local optionBtn = Instance.new("TextButton")
+            optionBtn.Name = "StageOption_" .. rarity
+            optionBtn.Size = UDim2.new(1, 0, 0, 40)
+            optionBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+            optionBtn.BorderSizePixel = 0
+            optionBtn.Font = Enum.Font.GothamBold
+            optionBtn.Text = "  " .. rarity
+            optionBtn.TextColor3 = CONFIG.COLORS.White
+            optionBtn.TextSize = 13
+            optionBtn.TextXAlignment = Enum.TextXAlignment.Left
+            optionBtn.ZIndex = 1002
+            optionBtn.Parent = scrollingFrame
+            
+            local optionCorner = Instance.new("UICorner")
+            optionCorner.CornerRadius = UDim.new(0, 8)
+            optionCorner.Parent = optionBtn
+            
+            local colorBar = Instance.new("Frame")
+            colorBar.Size = UDim2.new(0, 6, 0, 30)
+            colorBar.Position = UDim2.new(0, 8, 0.5, -15)
+            colorBar.BackgroundColor3 = rarityColors[rarity] or Color3.fromRGB(255, 255, 255)
+            colorBar.BorderSizePixel = 0
+            colorBar.ZIndex = 1003
+            colorBar.Parent = optionBtn
+            
+            local barCorner = Instance.new("UICorner")
+            barCorner.CornerRadius = UDim.new(1, 0)
+            barCorner.Parent = colorBar
+            
+            optionBtn.MouseEnter:Connect(function()
+                TweenService:Create(optionBtn, TweenInfo.new(0.1), {BackgroundColor3 = CONFIG.COLORS.DropdownHover}):Play()
+            end)
+            
+            optionBtn.MouseLeave:Connect(function()
+                if currentSelection ~= rarity then
+                    TweenService:Create(optionBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(45, 45, 55)}):Play()
+                end
+            end)
+            
+            optionBtn.MouseButton1Click:Connect(function()
+                currentSelection = rarity
+                dropdownBtn.Text = "🏆 " .. rarity
+                dropdownBtn.TextColor3 = rarityColors[rarity] or CONFIG.COLORS.White
+                
+                isOpen = false
+                TweenService:Create(dropdownContainer, TweenInfo.new(0.2), {Size = UDim2.new(0, 280, 0, 0)}):Play()
+                task.delay(0.2, function()
+                    dropdownContainer.Visible = false
+                end)
+                
+                callback(rarity)
+                print("Selected stage:", rarity)
+            end)
+        end
+        
+        scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, #STAGE_RARITIES * 44)
+    end
+    
+    populateOptions()
+    
+    dropdownBtn.MouseButton1Click:Connect(function()
+        isOpen = not isOpen
+        
+        if isOpen then
+            updatePosition()
+            dropdownContainer.Visible = true
+            TweenService:Create(dropdownContainer, TweenInfo.new(0.25), {Size = UDim2.new(0, 280, 0, 350)}):Play()
+        else
+            TweenService:Create(dropdownContainer, TweenInfo.new(0.2), {Size = UDim2.new(0, 280, 0, 0)}):Play()
+            task.delay(0.2, function()
+                dropdownContainer.Visible = false
+            end)
+        end
+    end)
+    
+    local clickConnection
+    clickConnection = UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and isOpen then
+            local mousePos = UserInputService:GetMouseLocation()
+            local containerPos = dropdownContainer.AbsolutePosition
+            local containerSize = dropdownContainer.AbsoluteSize
+            
+            local btnPos = dropdownBtn.AbsolutePosition
+            local btnSize = dropdownBtn.AbsoluteSize
+            
+            local outsideDropdown = (mousePos.X < containerPos.X or mousePos.X > containerPos.X + containerSize.X or
+                                    mousePos.Y < containerPos.Y or mousePos.Y > containerPos.Y + containerSize.Y)
+            local outsideButton = (mousePos.X < btnPos.X or mousePos.X > btnPos.X + btnSize.X or
+                                   mousePos.Y < btnPos.Y or mousePos.Y > btnPos.Y + btnSize.Y)
+            
+            if outsideDropdown and outsideButton then
+                isOpen = false
+                TweenService:Create(dropdownContainer, TweenInfo.new(0.2), {Size = UDim2.new(0, 280, 0, 0)}):Play()
+                task.delay(0.2, function()
+                    dropdownContainer.Visible = false
+                end)
+            end
+        end
+    end)
+    
+    frame.Destroying:Connect(function()
+        if clickConnection then
+            clickConnection:Disconnect()
+        end
+        dropdownContainer:Destroy()
+    end)
+    
+    return frame
+end
+
 local function createButton(parent, name, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -20, 0, 45)
@@ -2343,6 +2716,50 @@ createToggle(eventTab, "Auto Spin Wheel", "Automatically spins the wheel when ne
     if enabled then task.spawn(autoSpinWheelLoop) end
 end)
 
+-- ==================== STAGES TAB (NEW) ====================
+-- Stage selector dropdown
+createStageDropdown(stagesTab, "Select Stage/Rarity", function(stage)
+    selectedStage = stage
+end)
+
+-- Button to manually tween to selected stage wall
+createButton(stagesTab, "Tween to Selected Stage Wall", function()
+    if not selectedStage then
+        warn("Please select a stage first!")
+        return
+    end
+    tweenToStageWall()
+end)
+
+-- Auto tween toggle
+createToggle(stagesTab, "Auto Tween to Stage", "Automatically tweens to selected stage wall", function(enabled)
+    autoTweenToStage = enabled
+    if enabled then
+        if not selectedStage then
+            warn("Please select a stage first!")
+            autoTweenToStage = false
+            return
+        end
+        task.spawn(autoTweenToStageLoop)
+    end
+end)
+
+-- Info label
+local stageInfoLabel = Instance.new("TextLabel")
+stageInfoLabel.Size = UDim2.new(1, -20, 0, 60)
+stageInfoLabel.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
+stageInfoLabel.BackgroundTransparency = 0.3
+stageInfoLabel.Font = Enum.Font.Gotham
+stageInfoLabel.Text = "ℹ️ Select a stage to teleport to its VIP wall.\nStages: Common → Celestial (9 total)"
+stageInfoLabel.TextColor3 = CONFIG.COLORS.Gray
+stageInfoLabel.TextSize = 11
+stageInfoLabel.TextWrapped = true
+stageInfoLabel.Parent = stagesTab
+
+local infoCorner = Instance.new("UICorner")
+infoCorner.CornerRadius = UDim.new(0, 12)
+infoCorner.Parent = stageInfoLabel
+
 -- ==================== SELL TAB ====================
 createToggle(sellTab, "Auto Sell Inventory", "Sells all your brainrots automatically", function(enabled)
     autoSellInventory = enabled
@@ -2386,5 +2803,5 @@ player.CharacterAdded:Connect(function(newChar)
     humanoid = character:WaitForChild("Humanoid")
 end)
 
-print("Nexus|Escape Tsunami for Brainrots - COMPLETE EDITION v4 Loaded!")
-print("New features: Auto Clicker, Auto Spin Wheel, Auto Spawn Machine!")
+print("Nexus|Escape Tsunami for Brainrots - COMPLETE EDITION v5 Loaded!")
+print("New features: Stages Tab with VIP Wall Tweening, Fixed Scrolling!")
