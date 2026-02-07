@@ -1,5 +1,5 @@
 --[[
-    Nexus|Escape Tsunami for Brainrots - Complete Edition Fixed
+    Nexus|Escape Tsunami for Brainrots - Complete Edition Fixed v2
 ]]
 
 local Players = game:GetService("Players")
@@ -77,7 +77,9 @@ local CONFIG = {
         DarkGray = Color3.fromRGB(100, 100, 100),
         Hover = Color3.fromRGB(55, 55, 65),
         ESP = Color3.fromRGB(255, 0, 0),
-        DropdownBg = Color3.fromRGB(30, 30, 35)
+        DropdownBg = Color3.fromRGB(30, 30, 35),
+        DropdownHover = Color3.fromRGB(50, 50, 60),
+        DropdownSelected = Color3.fromRGB(70, 70, 85)
     }
 }
 
@@ -106,20 +108,27 @@ local espObjects = {}
 local autoCollectGoldBars = false
 local autoCompleteObby = false
 
--- NEW: Auto Collect Specific Brainrot Variables
+-- Auto Collect Specific Brainrot Variables
 local autoCollectSpecificBrainrot = false
 local selectedBrainrotToCollect = nil
 local isCollectingBrainrot = false
 local positionBeforeCollecting = nil
 local brainrotDropdownOpen = false
 
--- Settings Tab Variables - SMART GAP SYSTEM
+-- Settings Tab Variables - IMPROVED WAVE & GAP SYSTEM
 local autoGapEnabled = false
 local gapDetectionRange = 150
 local isInGap = false
 local currentGapTarget = nil
 local positionBeforeGap = nil
 local gapSafetyOffset = Vector3.new(0, -2, 0)
+local waveCheckHeight = 100 -- Height to check for waves above map
+local mapHeightThreshold = 10 -- Y position threshold for "under map" detection
+
+-- NEW: Auto Upgrade Selected Brainrot Variables
+local autoUpgradeSelectedBrainrot = false
+local selectedBrainrotToUpgrade = nil
+local brainrotUpgradeDropdownOpen = false
 
 -- Rarity order for brainrot dropdown
 local RARITY_ORDER = {
@@ -186,7 +195,7 @@ local function getBrainrotNames()
     return brainrots
 end
 
--- NEW: Get all brainrots from ReplicatedStorage for dropdown
+-- Get all brainrots from ReplicatedStorage for dropdown
 local function getAllBrainrotsFromStorage()
     local brainrotList = {}
     local assets = ReplicatedStorage:FindFirstChild("Assets")
@@ -213,7 +222,7 @@ local function getAllBrainrotsFromStorage()
     return brainrotList
 end
 
--- NEW: Find specific brainrot in ActiveBrainrots - IMPROVED
+-- Find specific brainrot in ActiveBrainrots - IMPROVED
 local function findBrainrotInActive(brainrotName, rarity)
     local activeBrainrots = Workspace:FindFirstChild("ActiveBrainrots")
     if not activeBrainrots then 
@@ -283,15 +292,61 @@ local function findBrainrotInActive(brainrotName, rarity)
     return nil
 end
 
--- NEW: Safe tween with wave avoidance - IMPROVED
-local function safeTweenToPosition(targetPosition, targetCFrame)
+-- IMPROVED: Check if position is under the map or in wave path
+local function isPositionUnderMapOrInWavePath(position)
+    -- Check if under map (y position check)
+    if position.Y < mapHeightThreshold then
+        return true, "under_map"
+    end
+    
+    -- Check if any wave is directly above this position
+    local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
+    if activeTsunamis then
+        for _, wave in ipairs(activeTsunamis:GetChildren()) do
+            local wavePart = nil
+            if wave:IsA("BasePart") then
+                wavePart = wave
+            elseif wave:IsA("Model") then
+                wavePart = wave.PrimaryPart or wave:FindFirstChildWhichIsA("BasePart")
+            end
+            
+            if wavePart then
+                local wavePos = wavePart.Position
+                local horizontalDist = math.sqrt((position.X - wavePos.X)^2 + (position.Z - wavePos.Z)^2)
+                
+                -- If wave is above this position and close horizontally
+                if wavePos.Y > position.Y and horizontalDist < 30 then
+                    return true, "wave_above"
+                end
+            end
+        end
+    end
+    
+    return false, nil
+end
+
+-- IMPROVED: Safe tween with better wave avoidance
+local function safeTweenToPosition(targetPosition, targetCFrame, useGapIfNeeded)
+    useGapIfNeeded = useGapIfNeeded ~= false -- Default true
+    
+    -- First check if target position is safe
+    local isUnsafe, reason = isPositionUnderMapOrInWavePath(targetPosition)
+    if isUnsafe then
+        warn("Target position is unsafe:", reason)
+        -- Try to find safe position near target
+        targetPosition = Vector3.new(targetPosition.X, math.max(targetPosition.Y, 20), targetPosition.Z)
+        targetCFrame = CFrame.new(targetPosition)
+    end
+    
     local success = false
     
-    -- Check if we need to go through a gap first
+    -- Check if we need to use gap
     local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
     local shouldUseGap = false
+    local nearestWave = nil
+    local nearestWaveDist = math.huge
     
-    if activeTsunamis then
+    if activeTsunamis and useGapIfNeeded then
         for _, wave in ipairs(activeTsunamis:GetChildren()) do
             local wavePart = nil
             if wave:IsA("BasePart") then
@@ -303,51 +358,127 @@ local function safeTweenToPosition(targetPosition, targetCFrame)
             if wavePart then
                 local distToWave = (humanoidRootPart.Position - wavePart.Position).Magnitude
                 local distToTarget = (targetPosition - wavePart.Position).Magnitude
+                local velocity = wavePart.Velocity or Vector3.new(0, 0, 0)
                 
-                if distToWave < gapDetectionRange or distToTarget < gapDetectionRange then
+                -- Check if wave is moving towards us or target
+                local movingTowardsUs = (humanoidRootPart.Position - wavePart.Position):Dot(velocity) < 0
+                local movingTowardsTarget = (targetPosition - wavePart.Position):Dot(velocity) < 0
+                
+                -- Use gap if wave is close to us OR close to target AND moving towards either
+                if (distToWave < gapDetectionRange and movingTowardsUs) or 
+                   (distToTarget < gapDetectionRange and movingTowardsTarget) or
+                   (distToWave < gapDetectionRange * 0.5) then -- Always use gap if very close
                     shouldUseGap = true
-                    break
+                    if distToWave < nearestWaveDist then
+                        nearestWaveDist = distToWave
+                        nearestWave = wavePart
+                    end
                 end
             end
         end
     end
     
     if shouldUseGap then
+        print("Wave detected! Using gap system...")
         local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
         if defaultMap then
             local gapsFolder = defaultMap:FindFirstChild("Gaps")
             if gapsFolder then
+                -- Find best gap based on wave position and our position
                 local bestGap = nil
-                local bestDist = math.huge
+                local bestScore = -math.huge
                 
                 for gapNum = 1, 9 do
                     local gap = gapsFolder:FindFirstChild("Gap" .. gapNum)
                     if gap then
                         local mud = gap:FindFirstChild("Mud")
                         if mud and mud:IsA("BasePart") then
-                            local dist = (humanoidRootPart.Position - mud.Position).Magnitude
-                            if dist < bestDist then
-                                bestDist = dist
-                                bestGap = mud
+                            local distToUs = (humanoidRootPart.Position - mud.Position).Magnitude
+                            local distFromWave = nearestWave and (mud.Position - nearestWave.Position).Magnitude or 999
+                            
+                            -- Score: prefer closer gaps that are farther from wave
+                            local score = (distFromWave * 2) - (distToUs * 0.5)
+                            
+                            -- Check if gap is safe (not under wave)
+                            local gapUnsafe, _ = isPositionUnderMapOrInWavePath(mud.Position)
+                            if not gapUnsafe then
+                                if score > bestScore then
+                                    bestScore = score
+                                    bestGap = mud
+                                end
                             end
                         end
                     end
                 end
                 
                 if bestGap then
-                    print("Going to gap first:", bestGap.Position)
-                    local gapTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.5), {CFrame = bestGap.CFrame + gapSafetyOffset})
+                    print("Moving to gap:", bestGap.Position)
+                    
+                    -- Tween to gap with multiple segments for safety
+                    local gapPos = bestGap.Position
+                    local currentPos = humanoidRootPart.Position
+                    local midPoint = (currentPos + gapPos) / 2
+                    midPoint = Vector3.new(midPoint.X, math.max(midPoint.Y, 20), midPoint.Z)
+                    
+                    -- First go up to safe height
+                    local upTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.3), {
+                        CFrame = CFrame.new(Vector3.new(currentPos.X, math.max(currentPos.Y + 10, 25), currentPos.Z))
+                    })
+                    upTween:Play()
+                    upTween.Completed:Wait()
+                    
+                    -- Then move to gap
+                    local gapTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.4), {
+                        CFrame = bestGap.CFrame + gapSafetyOffset
+                    })
                     gapTween:Play()
                     gapTween.Completed:Wait()
-                    task.wait(0.5)
+                    
+                    -- Wait in gap until wave passes
+                    local waitTime = 0
+                    while waitTime < 3 do -- Max 3 seconds in gap
+                        local waveStillThere = false
+                        if activeTsunamis then
+                            for _, wave in ipairs(activeTsunamis:GetChildren()) do
+                                local wavePart = wave:IsA("BasePart") and wave or (wave.PrimaryPart or wave:FindFirstChildWhichIsA("BasePart"))
+                                if wavePart then
+                                    local dist = (humanoidRootPart.Position - wavePart.Position).Magnitude
+                                    if dist < gapDetectionRange then
+                                        waveStillThere = true
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                        
+                        if not waveStillThere then
+                            print("Wave passed! Exiting gap...")
+                            break
+                        end
+                        
+                        task.wait(0.2)
+                        waitTime = waitTime + 0.2
+                        
+                        -- Keep player in gap
+                        humanoidRootPart.CFrame = bestGap.CFrame + gapSafetyOffset
+                        humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                    end
+                    
+                    task.wait(0.3)
+                else
+                    warn("No safe gap found!")
                 end
             end
         end
     end
     
-    -- Now tween to target
-    print("Tweening to target:", targetPosition)
-    local finalTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = targetCFrame})
+    -- Final tween to target with height check
+    local finalPos = targetCFrame.Position
+    finalPos = Vector3.new(finalPos.X, math.max(finalPos.Y, 15), finalPos.Z)
+    local finalCFrame = CFrame.new(finalPos) * (targetCFrame - targetCFrame.Position)
+    
+    print("Tweening to final target:", finalPos)
+    local finalTween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.8), {CFrame = finalCFrame})
     finalTween:Play()
     finalTween.Completed:Wait()
     success = true
@@ -355,7 +486,7 @@ local function safeTweenToPosition(targetPosition, targetCFrame)
     return success
 end
 
--- NEW: Auto Collect Specific Brainrot Loop - IMPROVED
+-- Auto Collect Specific Brainrot Loop - IMPROVED
 local function autoCollectSpecificBrainrotLoop()
     print("Auto Collect Specific Brainrot started for:", selectedBrainrotToCollect and selectedBrainrotToCollect.name or "None")
     
@@ -379,9 +510,20 @@ local function autoCollectSpecificBrainrotLoop()
                 positionBeforeCollecting = humanoidRootPart.CFrame
                 print("Saved position before collecting:", positionBeforeCollecting.Position)
                 
+                -- Check if brainrot position is safe
+                local brainrotPos = foundBrainrot.part.Position
+                local isUnsafe, reason = isPositionUnderMapOrInWavePath(brainrotPos)
+                
+                if isUnsafe then
+                    print("Brainrot is in unsafe position:", reason, "- waiting...")
+                    task.wait(1)
+                    isCollectingBrainrot = false
+                    return
+                end
+                
                 -- Tween to brainrot with wave avoidance
-                local targetCFrame = foundBrainrot.cframe + Vector3.new(0, 5, 0) -- Go slightly above
-                local tweenSuccess = safeTweenToPosition(foundBrainrot.part.Position, targetCFrame)
+                local targetCFrame = foundBrainrot.cframe + Vector3.new(0, 5, 0)
+                local tweenSuccess = safeTweenToPosition(foundBrainrot.part.Position, targetCFrame, true)
                 
                 if tweenSuccess then
                     print("Arrived at brainrot, collecting...")
@@ -420,7 +562,7 @@ local function autoCollectSpecificBrainrotLoop()
                     if base then
                         local basePart = base:FindFirstChildWhichIsA("BasePart", true)
                         if basePart then
-                            safeTweenToPosition(basePart.Position, basePart.CFrame + Vector3.new(0, 5, 0))
+                            safeTweenToPosition(basePart.Position, basePart.CFrame + Vector3.new(0, 5, 0), true)
                         end
                     end
                     
@@ -452,9 +594,9 @@ local function autoCollectSpecificBrainrotLoop()
     print("Auto Collect Specific Brainrot stopped")
 end
 
--- SMART GAP SYSTEM
+-- IMPROVED SMART GAP SYSTEM
 local function smartGapLoop()
-    print("Smart Auto Gap started")
+    print("Improved Smart Auto Gap started")
     positionBeforeGap = nil
     
     while autoGapEnabled do
@@ -482,12 +624,28 @@ local function smartGapLoop()
                     local speed = velocity.Magnitude
                     local isMovingTowards = (humanoidRootPart.Position - wavePart.Position):Dot(velocity) < 0
                     
+                    -- Calculate threat based on distance, speed, and direction
+                    local threatLevel = 0
+                    if distance < gapDetectionRange then
+                        threatLevel = threatLevel + (gapDetectionRange - distance)
+                    end
+                    threatLevel = threatLevel + (speed * 3)
+                    if isMovingTowards then
+                        threatLevel = threatLevel + 100
+                    end
+                    
+                    -- Extra threat if wave is close to ground level (can hit us)
+                    if wavePart.Position.Y < 50 then
+                        threatLevel = threatLevel + 50
+                    end
+                    
                     table.insert(waves, {
                         part = wavePart,
                         distance = distance,
                         speed = speed,
                         isMovingTowards = isMovingTowards,
-                        threatLevel = (gapDetectionRange - distance) + (speed * 2) + (isMovingTowards and 50 or 0)
+                        threatLevel = threatLevel,
+                        velocity = velocity
                     })
                 end
             end
@@ -498,22 +656,30 @@ local function smartGapLoop()
             local shouldBeInGap = false
             
             if nearestThreat then
-                if nearestThreat.distance <= gapDetectionRange then
+                -- Enter gap if threat is high enough
+                if nearestThreat.threatLevel > 50 then
                     shouldBeInGap = true
                 end
-                if nearestThreat.isMovingTowards and nearestThreat.distance <= gapDetectionRange * 1.5 then
+                
+                -- Emergency: wave very close
+                if nearestThreat.distance < 30 then
                     shouldBeInGap = true
                 end
-                if nearestThreat.speed > 10 and nearestThreat.distance <= 200 then
-                    shouldBeInGap = true
-                end
+            end
+            
+            -- Also check if we're currently under map (emergency)
+            if humanoidRootPart.Position.Y < mapHeightThreshold then
+                shouldBeInGap = true
+                print("Emergency: Under map detected!")
             end
             
             if shouldBeInGap then
                 if not isInGap and not positionBeforeGap then
                     positionBeforeGap = humanoidRootPart.CFrame
+                    print("Saving position before gap:", positionBeforeGap.Position)
                 end
                 
+                -- Find best gap
                 local bestGap = nil
                 local bestScore = -math.huge
                 
@@ -524,11 +690,18 @@ local function smartGapLoop()
                         if mud and mud:IsA("BasePart") then
                             local distToGap = (humanoidRootPart.Position - mud.Position).Magnitude
                             local distFromWave = nearestThreat and (mud.Position - nearestThreat.part.Position).Magnitude or 999
-                            local score = 1000 - distToGap + (distFromWave * 0.5)
                             
-                            if score > bestScore then
-                                bestScore = score
-                                bestGap = mud
+                            -- Check if gap is safe (not under map)
+                            local gapUnsafe, _ = isPositionUnderMapOrInWavePath(mud.Position)
+                            
+                            if not gapUnsafe then
+                                -- Score: prefer closer gaps that are far from wave
+                                local score = (distFromWave * 1.5) - (distToGap * 0.3)
+                                
+                                if score > bestScore then
+                                    bestScore = score
+                                    bestGap = mud
+                                end
                             end
                         end
                     end
@@ -541,33 +714,51 @@ local function smartGapLoop()
                     local targetCFrame = bestGap.CFrame + gapSafetyOffset
                     local currentDist = (humanoidRootPart.Position - bestGap.Position).Magnitude
                     
-                    if currentDist > 10 then
-                        local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.2), {CFrame = targetCFrame})
-                        tween:Play()
-                    elseif currentDist > 3 then
-                        local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.1), {CFrame = targetCFrame})
+                    -- Fast tween if far, slow if close
+                    local tweenSpeed = math.clamp(currentDist / 50, 0.1, 0.5)
+                    
+                    if currentDist > 5 then
+                        local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(tweenSpeed), {CFrame = targetCFrame})
                         tween:Play()
                     else
                         humanoidRootPart.CFrame = targetCFrame
-                        humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
                     end
                     
-                    if nearestThreat and nearestThreat.distance < 20 then
+                    -- Keep velocity zero while in gap
+                    humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                    
+                    -- Anchor if wave is extremely close
+                    if nearestThreat and nearestThreat.distance < 15 then
                         humanoidRootPart.Anchored = true
                         task.wait(0.1)
                         humanoidRootPart.Anchored = false
                         humanoidRootPart.CFrame = targetCFrame
                     end
+                else
+                    -- No safe gap found, go up!
+                    print("No safe gap! Going up...")
+                    local upPos = humanoidRootPart.Position + Vector3.new(0, 20, 0)
+                    humanoidRootPart.CFrame = CFrame.new(upPos)
                 end
             else
+                -- Safe to exit gap
                 if isInGap and positionBeforeGap then
-                    local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = positionBeforeGap})
-                    returnTween:Play()
-                    returnTween.Completed:Wait()
+                    -- Check if path back is safe
+                    local pathUnsafe, _ = isPositionUnderMapOrInWavePath(positionBeforeGap.Position)
                     
-                    isInGap = false
-                    currentGapTarget = nil
-                    positionBeforeGap = nil
+                    if not pathUnsafe then
+                        local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = positionBeforeGap})
+                        returnTween:Play()
+                        returnTween.Completed:Wait()
+                        
+                        isInGap = false
+                        currentGapTarget = nil
+                        positionBeforeGap = nil
+                        print("Returned to position after gap")
+                    else
+                        -- Position is still unsafe, wait longer
+                        print("Position still unsafe, staying in gap...")
+                    end
                 else
                     isInGap = false
                     currentGapTarget = nil
@@ -579,12 +770,16 @@ local function smartGapLoop()
             warn("Smart gap error:", err)
         end
         
-        task.wait(isInGap and 0.05 or 0.2)
+        task.wait(isInGap and 0.05 or 0.15)
     end
     
+    -- Cleanup when disabled
     if isInGap and positionBeforeGap then
-        local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = positionBeforeGap})
-        returnTween:Play()
+        local pathUnsafe, _ = isPositionUnderMapOrInWavePath(positionBeforeGap.Position)
+        if not pathUnsafe then
+            local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = positionBeforeGap})
+            returnTween:Play()
+        end
     end
     
     isInGap = false
@@ -847,7 +1042,7 @@ local function autoHitLoop()
     end
 end
 
--- FIXED: Auto Upgrade Base using SurfaceGui button
+-- Auto Upgrade Base using SurfaceGui button
 local function autoUpgradeBaseLoop()
     while autoUpgradeBase do
         local success, err = pcall(function()
@@ -954,7 +1149,7 @@ local function autoCollectCashLoop()
     autoCollectCashTweened = false
 end
 
--- FIXED: Auto Collect Gold Bars - Teleport to player instead
+-- Auto Collect Gold Bars
 local function autoCollectGoldBarsLoop()
     while autoCollectGoldBars do
         local success, err = pcall(function()
@@ -981,7 +1176,7 @@ local function autoCollectGoldBarsLoop()
             end
         end)
         
-        task.wait(0.3) -- Faster checks
+        task.wait(0.3)
     end
 end
 
@@ -1038,6 +1233,70 @@ local function autoUpgradeBrainrotLoop()
         end
         task.wait(0.5)
     end
+end
+
+-- NEW: Auto Upgrade Selected Brainrot Loop
+local function autoUpgradeSelectedBrainrotLoop()
+    print("Auto Upgrade Selected Brainrot started for:", selectedBrainrotToUpgrade and selectedBrainrotToUpgrade.name or "None")
+    
+    while autoUpgradeSelectedBrainrot do
+        local success, err = pcall(function()
+            if not selectedBrainrotToUpgrade then
+                warn("No brainrot selected for upgrade!")
+                task.wait(2)
+                return
+            end
+            
+            -- Find the brainrot in base slots
+            local base = getPlayerBase()
+            if not base then
+                warn("No base found!")
+                task.wait(2)
+                return
+            end
+            
+            local slots = base:FindFirstChild("Slots")
+            if not slots then
+                warn("No slots found in base!")
+                task.wait(2)
+                return
+            end
+            
+            -- Find which slot has the selected brainrot
+            local targetSlot = nil
+            for i = 1, 40 do
+                local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
+                if slot then
+                    for _, child in ipairs(slot:GetChildren()) do
+                        if child:IsA("Model") and child.Name == selectedBrainrotToUpgrade.name then
+                            targetSlot = i
+                            break
+                        end
+                    end
+                    if targetSlot then break end
+                end
+            end
+            
+            if targetSlot then
+                print("Upgrading brainrot:", selectedBrainrotToUpgrade.name, "in slot:", targetSlot)
+                if UpgradeBrainrotFunction then
+                    UpgradeBrainrotFunction:InvokeServer(targetSlot)
+                else
+                    warn("UpgradeBrainrot remote not found!")
+                end
+            else
+                print("Selected brainrot not found in any slot")
+            end
+        end)
+        
+        if not success then
+            warn("Auto upgrade selected brainrot error:", err)
+        end
+        
+        task.wait(1) -- Wait between upgrades
+    end
+    
+    print("Auto Upgrade Selected Brainrot stopped")
 end
 
 local function autoCompleteObbyLoop()
@@ -1136,6 +1395,7 @@ closeBtn.MouseButton1Click:Connect(function()
     hitboxExtenderEnabled = false
     autoGapEnabled = false
     autoCollectSpecificBrainrot = false
+    autoUpgradeSelectedBrainrot = false
     espEnabled = false
     for p, _ in pairs(espObjects) do
         removeESP(p)
@@ -1450,14 +1710,14 @@ local function createSlider(parent, name, description, min, max, default, callba
     return frame
 end
 
--- NEW: REAL Dropdown Menu for Brainrots
-local function createRealBrainrotDropdown(parent, name)
+-- IMPROVED: Better Dropdown Menu for Brainrots
+local function createImprovedBrainrotDropdown(parent, name, callback, storeVar)
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, -20, 0, 80)
+    frame.Size = UDim2.new(1, -20, 0, 85)
     frame.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
     frame.BackgroundTransparency = 0.3
     frame.BorderSizePixel = 0
-    frame.ClipsDescendants = true
+    frame.ClipsDescendants = false
     frame.Parent = parent
     
     local corner = Instance.new("UICorner")
@@ -1475,121 +1735,277 @@ local function createRealBrainrotDropdown(parent, name)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = frame
     
-    local dropdownBtn = Instance.new("TextButton")
-    dropdownBtn.Size = UDim2.new(1, -30, 0, 30)
-    dropdownBtn.Position = UDim2.new(0, 15, 0, 40)
-    dropdownBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-    dropdownBtn.BorderSizePixel = 0
-    dropdownBtn.Font = Enum.Font.Gotham
-    dropdownBtn.Text = "Select Brainrot..."
-    dropdownBtn.TextColor3 = CONFIG.COLORS.Gray
-    dropdownBtn.TextSize = 12
-    dropdownBtn.Parent = frame
+    -- Search box
+    local searchBox = Instance.new("TextBox")
+    searchBox.Size = UDim2.new(1, -30, 0, 28)
+    searchBox.Position = UDim2.new(0, 15, 0, 40)
+    searchBox.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    searchBox.BorderSizePixel = 0
+    searchBox.Font = Enum.Font.Gotham
+    searchBox.Text = "🔍 Search brainrot..."
+    searchBox.TextColor3 = CONFIG.COLORS.Gray
+    searchBox.TextSize = 12
+    searchBox.ClearTextOnFocus = true
+    searchBox.Parent = frame
     
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 8)
-    btnCorner.Parent = dropdownBtn
+    local searchCorner = Instance.new("UICorner")
+    searchCorner.CornerRadius = UDim.new(0, 8)
+    searchCorner.Parent = searchBox
     
-    -- Dropdown menu frame (hidden by default)
+    -- Dropdown arrow button
+    local dropdownArrow = Instance.new("TextButton")
+    dropdownArrow.Size = UDim2.new(0, 28, 0, 28)
+    dropdownArrow.Position = UDim2.new(1, -43, 0, 40)
+    dropdownArrow.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    dropdownArrow.BorderSizePixel = 0
+    dropdownArrow.Font = Enum.Font.GothamBold
+    dropdownArrow.Text = "▼"
+    dropdownArrow.TextColor3 = CONFIG.COLORS.White
+    dropdownArrow.TextSize = 12
+    dropdownArrow.Parent = frame
+    
+    local arrowCorner = Instance.new("UICorner")
+    arrowCorner.CornerRadius = UDim.new(0, 6)
+    arrowCorner.Parent = dropdownArrow
+    
+    -- Dropdown menu frame
     local dropdownMenu = Instance.new("Frame")
     dropdownMenu.Name = "DropdownMenu"
-    dropdownMenu.Size = UDim2.new(1, -30, 0, 200)
+    dropdownMenu.Size = UDim2.new(1, -30, 0, 0)
     dropdownMenu.Position = UDim2.new(0, 15, 0, 75)
     dropdownMenu.BackgroundColor3 = CONFIG.COLORS.DropdownBg
     dropdownMenu.BorderSizePixel = 0
     dropdownMenu.Visible = false
-    dropdownMenu.ZIndex = 10
+    dropdownMenu.ZIndex = 100
     dropdownMenu.Parent = frame
     
     local menuCorner = Instance.new("UICorner")
-    menuCorner.CornerRadius = UDim.new(0, 8)
+    menuCorner.CornerRadius = UDim.new(0, 10)
     menuCorner.Parent = dropdownMenu
     
     local menuStroke = Instance.new("UIStroke")
     menuStroke.Color = CONFIG.COLORS.Accent
-    menuStroke.Thickness = 1
+    menuStroke.Thickness = 1.5
     menuStroke.Parent = dropdownMenu
+    
+    -- Shadow effect
+    local shadow = Instance.new("ImageLabel")
+    shadow.Name = "Shadow"
+    shadow.Size = UDim2.new(1, 20, 1, 20)
+    shadow.Position = UDim2.new(0, -10, 0, -10)
+    shadow.BackgroundTransparency = 1
+    shadow.Image = "rbxassetid://1316045217" -- Shadow image
+    shadow.ImageColor3 = Color3.new(0, 0, 0)
+    shadow.ImageTransparency = 0.6
+    shadow.ScaleType = Enum.ScaleType.Slice
+    shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+    shadow.ZIndex = 99
+    shadow.Visible = false
+    shadow.Parent = dropdownMenu
     
     -- Scrolling frame for options
     local scrollingFrame = Instance.new("ScrollingFrame")
-    scrollingFrame.Size = UDim2.new(1, -10, 1, -10)
-    scrollingFrame.Position = UDim2.new(0, 5, 0, 5)
+    scrollingFrame.Size = UDim2.new(1, -16, 1, -16)
+    scrollingFrame.Position = UDim2.new(0, 8, 0, 8)
     scrollingFrame.BackgroundTransparency = 1
     scrollingFrame.BorderSizePixel = 0
-    scrollingFrame.ScrollBarThickness = 4
+    scrollingFrame.ScrollBarThickness = 6
     scrollingFrame.ScrollBarImageColor3 = CONFIG.COLORS.Accent
-    scrollingFrame.ZIndex = 10
+    scrollingFrame.ZIndex = 101
     scrollingFrame.Parent = dropdownMenu
     
     local listLayout = Instance.new("UIListLayout")
-    listLayout.Padding = UDim.new(0, 2)
+    listLayout.Padding = UDim.new(0, 4)
     listLayout.Parent = scrollingFrame
     
-    -- Get all brainrots
     local allBrainrots = getAllBrainrotsFromStorage()
+    local filteredBrainrots = allBrainrots
+    local selectedBrainrot = nil
+    local isOpen = false
     
-    -- Populate dropdown
-    for _, brainrotInfo in ipairs(allBrainrots) do
-        local optionBtn = Instance.new("TextButton")
-        optionBtn.Size = UDim2.new(1, 0, 0, 25)
-        optionBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-        optionBtn.BorderSizePixel = 0
-        optionBtn.Font = Enum.Font.Gotham
-        optionBtn.Text = brainrotInfo.fullName
-        optionBtn.TextColor3 = CONFIG.COLORS.White
-        optionBtn.TextSize = 11
-        optionBtn.TextXAlignment = Enum.TextXAlignment.Left
-        optionBtn.ZIndex = 10
-        optionBtn.Parent = scrollingFrame
+    local function updateOptions(filterText)
+        -- Clear existing
+        for _, child in ipairs(scrollingFrame:GetChildren()) do
+            if child:IsA("TextButton") then
+                child:Destroy()
+            end
+        end
         
-        local optionCorner = Instance.new("UICorner")
-        optionCorner.CornerRadius = UDim.new(0, 4)
-        optionCorner.Parent = optionBtn
+        -- Filter brainrots
+        filteredBrainrots = {}
+        local searchLower = filterText:lower()
+        for _, brainrot in ipairs(allBrainrots) do
+            if brainrot.fullName:lower():find(searchLower) or searchLower == "" or searchLower == "search brainrot..." then
+                table.insert(filteredBrainrots, brainrot)
+            end
+        end
         
-        optionBtn.MouseEnter:Connect(function()
-            TweenService:Create(optionBtn, TweenInfo.new(0.1), {BackgroundColor3 = CONFIG.COLORS.Accent}):Play()
-        end)
+        -- Create option buttons
+        for _, brainrotInfo in ipairs(filteredBrainrots) do
+            local optionBtn = Instance.new("TextButton")
+            optionBtn.Size = UDim2.new(1, 0, 0, 32)
+            optionBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+            optionBtn.BorderSizePixel = 0
+            optionBtn.Font = Enum.Font.Gotham
+            optionBtn.Text = "  " .. brainrotInfo.fullName
+            optionBtn.TextColor3 = CONFIG.COLORS.White
+            optionBtn.TextSize = 11
+            optionBtn.TextXAlignment = Enum.TextXAlignment.Left
+            optionBtn.ZIndex = 102
+            optionBtn.Parent = scrollingFrame
+            
+            local optionCorner = Instance.new("UICorner")
+            optionCorner.CornerRadius = UDim.new(0, 6)
+            optionCorner.Parent = optionBtn
+            
+            -- Rarity color indicator
+            local rarityIndicator = Instance.new("Frame")
+            rarityIndicator.Size = UDim2.new(0, 4, 0, 20)
+            rarityIndicator.Position = UDim2.new(0, 6, 0.5, -10)
+            rarityIndicator.BackgroundColor3 = CONFIG.COLORS.Accent
+            rarityIndicator.BorderSizePixel = 0
+            rarityIndicator.ZIndex = 103
+            rarityIndicator.Parent = optionBtn
+            
+            local indicatorCorner = Instance.new("UICorner")
+            indicatorCorner.CornerRadius = UDim.new(1, 0)
+            indicatorCorner.Parent = rarityIndicator
+            
+            -- Set color based on rarity
+            if brainrotInfo.rarity == "Common" then
+                rarityIndicator.BackgroundColor3 = Color3.fromRGB(169, 169, 169)
+            elseif brainrotInfo.rarity == "Uncommon" then
+                rarityIndicator.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            elseif brainrotInfo.rarity == "Rare" then
+                rarityIndicator.BackgroundColor3 = Color3.fromRGB(0, 100, 255)
+            elseif brainrotInfo.rarity == "Epic" then
+                rarityIndicator.BackgroundColor3 = Color3.fromRGB(150, 0, 255)
+            elseif brainrotInfo.rarity == "Legendary" then
+                rarityIndicator.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
+            elseif brainrotInfo.rarity == "Mythical" then
+                rarityIndicator.BackgroundColor3 = Color3.fromRGB(255, 0, 100)
+            elseif brainrotInfo.rarity == "Secret" then
+                rarityIndicator.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            else
+                rarityIndicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            end
+            
+            optionBtn.MouseEnter:Connect(function()
+                TweenService:Create(optionBtn, TweenInfo.new(0.15), {BackgroundColor3 = CONFIG.COLORS.DropdownHover}):Play()
+            end)
+            
+            optionBtn.MouseLeave:Connect(function()
+                if selectedBrainrot ~= brainrotInfo then
+                    TweenService:Create(optionBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(45, 45, 55)}):Play()
+                end
+            end)
+            
+            optionBtn.MouseButton1Click:Connect(function()
+                selectedBrainrot = brainrotInfo
+                searchBox.Text = brainrotInfo.fullName
+                searchBox.TextColor3 = CONFIG.COLORS.White
+                
+                -- Update visual selection
+                for _, child in ipairs(scrollingFrame:GetChildren()) do
+                    if child:IsA("TextButton") then
+                        TweenService:Create(child, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(45, 45, 55)}):Play()
+                    end
+                end
+                TweenService:Create(optionBtn, TweenInfo.new(0.15), {BackgroundColor3 = CONFIG.COLORS.DropdownSelected}):Play()
+                
+                -- Close dropdown with animation
+                isOpen = false
+                TweenService:Create(dropdownMenu, TweenInfo.new(0.2), {Size = UDim2.new(1, -30, 0, 0)}):Play()
+                TweenService:Create(dropdownArrow, TweenInfo.new(0.2), {Rotation = 0}):Play()
+                shadow.Visible = false
+                task.delay(0.2, function()
+                    if not isOpen then
+                        dropdownMenu.Visible = false
+                    end
+                end)
+                
+                -- Callback
+                callback(brainrotInfo)
+                print("Selected:", brainrotInfo.fullName)
+            end)
+        end
         
-        optionBtn.MouseLeave:Connect(function()
-            TweenService:Create(optionBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(45, 45, 55)}):Play()
-        end)
-        
-        optionBtn.MouseButton1Click:Connect(function()
-            selectedBrainrotToCollect = brainrotInfo
-            dropdownBtn.Text = brainrotInfo.fullName
-            dropdownMenu.Visible = false
-            brainrotDropdownOpen = false
-            print("Selected brainrot:", brainrotInfo.fullName)
-        end)
+        -- Update canvas size
+        local totalHeight = #filteredBrainrots * 36
+        scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, math.max(totalHeight, 100))
     end
     
-    scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, #allBrainrots * 27)
+    -- Initial population
+    updateOptions("")
     
     -- Toggle dropdown
-    dropdownBtn.MouseButton1Click:Connect(function()
-        brainrotDropdownOpen = not brainrotDropdownOpen
-        dropdownMenu.Visible = brainrotDropdownOpen
+    local function toggleDropdown()
+        isOpen = not isOpen
         
-        if brainrotDropdownOpen then
-            frame.Size = UDim2.new(1, -20, 0, 280)
+        if isOpen then
+            dropdownMenu.Visible = true
+            shadow.Visible = true
+            TweenService:Create(dropdownMenu, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                Size = UDim2.new(1, -30, 0, math.min(250, math.max(100, #filteredBrainrots * 36 + 16)))
+            }):Play()
+            TweenService:Create(dropdownArrow, TweenInfo.new(0.2), {Rotation = 180}):Play()
+            searchBox:CaptureFocus()
         else
-            frame.Size = UDim2.new(1, -20, 0, 80)
+            TweenService:Create(dropdownMenu, TweenInfo.new(0.2), {Size = UDim2.new(1, -30, 0, 0)}):Play()
+            TweenService:Create(dropdownArrow, TweenInfo.new(0.2), {Rotation = 0}):Play()
+            shadow.Visible = false
+            task.delay(0.2, function()
+                if not isOpen then
+                    dropdownMenu.Visible = false
+                end
+            end)
+        end
+    end
+    
+    dropdownArrow.MouseButton1Click:Connect(toggleDropdown)
+    searchBox.Focused:Connect(function()
+        if not isOpen then
+            toggleDropdown()
+        end
+    end)
+    
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        updateOptions(searchBox.Text)
+        if not isOpen then
+            toggleDropdown()
         end
     end)
     
     -- Close when clicking outside
-    UserInputService.InputBegan:Connect(function(input)
+    local connection
+    connection = UserInputService.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             local mousePos = UserInputService:GetMouseLocation()
             local framePos = frame.AbsolutePosition
             local frameSize = frame.AbsoluteSize
             
+            -- Check if click is outside frame
             if mousePos.X < framePos.X or mousePos.X > framePos.X + frameSize.X or
-               mousePos.Y < framePos.Y or mousePos.Y > framePos.Y + frameSize.Y then
-                brainrotDropdownOpen = false
-                dropdownMenu.Visible = false
-                frame.Size = UDim2.new(1, -20, 0, 80)
+               mousePos.Y < framePos.Y or mousePos.Y > framePos.Y + frameSize.Y + (isOpen and 250 or 0) then
+                if isOpen then
+                    isOpen = false
+                    TweenService:Create(dropdownMenu, TweenInfo.new(0.2), {Size = UDim2.new(1, -30, 0, 0)}):Play()
+                    TweenService:Create(dropdownArrow, TweenInfo.new(0.2), {Rotation = 0}):Play()
+                    shadow.Visible = false
+                    task.delay(0.2, function()
+                        if not isOpen then
+                            dropdownMenu.Visible = false
+                        end
+                    end)
+                end
             end
+        end
+    end)
+    
+    -- Cleanup on destroy
+    frame.Destroying:Connect(function()
+        if connection then
+            connection:Disconnect()
         end
     end)
     
@@ -1753,8 +2169,10 @@ createToggle(automationTab, "Auto Upgrade Brainrot", "Automatically upgrades sel
     end
 end)
 
--- NEW: Brainrot Collection Dropdown in Automation Tab too
-createRealBrainrotDropdown(automationTab, "Select Brainrot to Collect")
+-- NEW: Improved Brainrot Collection Dropdown
+createImprovedBrainrotDropdown(automationTab, "Select Brainrot to Collect", function(brainrotInfo)
+    selectedBrainrotToCollect = brainrotInfo
+end)
 
 createToggle(automationTab, "Auto Collect Selected Brainrot", "Tween to brainrot, avoid waves, return to base", function(enabled)
     autoCollectSpecificBrainrot = enabled
@@ -1764,6 +2182,22 @@ createToggle(automationTab, "Auto Collect Selected Brainrot", "Tween to brainrot
             return
         end
         task.spawn(autoCollectSpecificBrainrotLoop)
+    end
+end)
+
+-- NEW: Auto Upgrade Selected Brainrot Dropdown
+createImprovedBrainrotDropdown(automationTab, "Select Brainrot to Auto-Upgrade", function(brainrotInfo)
+    selectedBrainrotToUpgrade = brainrotInfo
+end)
+
+createToggle(automationTab, "Auto Upgrade Selected Brainrot", "Automatically upgrades specific brainrot when in base", function(enabled)
+    autoUpgradeSelectedBrainrot = enabled
+    if enabled then
+        if not selectedBrainrotToUpgrade then
+            warn("Please select a brainrot to upgrade first!")
+            return
+        end
+        task.spawn(autoUpgradeSelectedBrainrotLoop)
     end
 end)
 
@@ -1833,19 +2267,8 @@ createToggle(combatTab, "Auto Hit", "Auto attacks enemies in range", function(en
     if enabled then task.spawn(autoHitLoop) end
 end)
 
--- ==================== EVENT TAB ====================
-createRealBrainrotDropdown(eventTab, "Select Brainrot to Collect")
-
-createToggle(eventTab, "Auto Collect Selected Brainrot", "Tween to brainrot, avoid waves, return to base", function(enabled)
-    autoCollectSpecificBrainrot = enabled
-    if enabled then
-        if not selectedBrainrotToCollect then
-            warn("Please select a brainrot first!")
-            return
-        end
-        task.spawn(autoCollectSpecificBrainrotLoop)
-    end
-end)
+-- ==================== EVENT TAB (REMOVED AUTO COLLECT BRAINROT) ====================
+-- REMOVED: Auto Collect Selected Brainrot from Event tab (now only in Automation)
 
 createToggle(eventTab, "Auto Collect Gold Bars", "Teleports gold bars to you", function(enabled)
     autoCollectGoldBars = enabled
@@ -1900,4 +2323,5 @@ player.CharacterAdded:Connect(function(newChar)
     humanoid = character:WaitForChild("Humanoid")
 end)
 
-print("Nexus|Escape Tsunami for Brainrots - COMPLETE EDITION Loaded!")
+print("Nexus|Escape Tsunami for Brainrots - COMPLETE EDITION v2 Loaded!")
+print("Features: Improved wave detection, better gap system, smoother dropdowns!")
