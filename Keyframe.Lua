@@ -1,6 +1,6 @@
 --[[
     Nexus Key System - Fixed Version
-    Repo: https://github.com/NexusHuby/Nexus-Libary
+    Repo: https://github.com/NexusHuby/Nexus-Libary 
 ]]
 
 local Players = game:GetService("Players")
@@ -12,21 +12,9 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- Configuration
 local CONFIG = {
     KEY_LINK = "https://discord.gg/yourlink",
-    local VALID_KEYS = {
-    "NEXU-L76M-0HUD-DPR9",
-    "NEXU-RWBC-VNU5-KFTW",
-    "NEXU-C22P-1K4H-0MXC",
-    "NEXU-BLIO-I0HQ-OO8O",
-    "NEXU-29Q0-KSTP-ULOD",
-    "NEXU-IJII-4B6L-URHH",
-    "NEXU-75FA-XCYO-65XJ",
-    "NEXU-R3EV-A4T0-5I6W",
-    "NEXU-NNGX-QO04-5TEG",
-    "NEXU-Y2KI-PKG6-NFOM",
-}
-    -- FIXED: Raw GitHub URL format
-    MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/refs/heads/main/Main.lua",
-
+    -- FIXED: Moved VALID_KEYS outside of CONFIG table or fixed syntax
+    MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/NexusHuby/Nexus-Libary/main/Main.lua",
+    
     COLORS = {
         Background = Color3.fromRGB(30, 30, 35),
         InputBg = Color3.fromRGB(45, 45, 55),
@@ -52,6 +40,20 @@ local CONFIG = {
         {Color3.fromRGB(30, 40, 40), Color3.fromRGB(40, 45, 50), 315},
         {Color3.fromRGB(45, 45, 50), Color3.fromRGB(30, 30, 35), 360}
     }
+}
+
+-- FIXED: Define VALID_KEYS separately (not inside CONFIG)
+local VALID_KEYS = {
+    "NEXU-L76M-0HUD-DPR9",
+    "NEXU-RWBC-VNU5-KFTW",
+    "NEXU-C22P-1K4H-0MXC",
+    "NEXU-BLIO-I0HQ-OO8O",
+    "NEXU-29Q0-KSTP-ULOD",
+    "NEXU-IJII-4B6L-URHH",
+    "NEXU-75FA-XCYO-65XJ",
+    "NEXU-R3EV-A4T0-5I6W",
+    "NEXU-NNGX-QO04-5TEG",
+    "NEXU-Y2KI-PKG6-NFOM",
 }
 
 -- File names for key storage
@@ -92,7 +94,7 @@ local function loadSavedKey()
             return nil
         end
         
-        for _, validKey in ipairs(CONFIG.VALID_KEYS) do
+        for _, validKey in ipairs(VALID_KEYS) do
             if data.key:upper() == validKey:upper() then
                 return data.key
             end
@@ -104,34 +106,42 @@ local function loadSavedKey()
     return success and result or nil
 end
 
--- FIXED: Load main script function (Line 121)
+-- FIXED: Load main script function with better error handling
 local function loadMainScript()
+    print("Attempting to load main script from:", CONFIG.MAIN_SCRIPT_URL)
+    
     local success, result = pcall(function()
-        -- FIXED: Proper HTTP request and loadstring execution
+        -- Method 1: Try game:HttpGet
         local response = game:HttpGet(CONFIG.MAIN_SCRIPT_URL)
-        if response and #response > 0 then
-            -- FIXED: Execute the loaded script properly
-            local loadedFunction, loadError = loadstring(response)
-            if loadedFunction then
-                return loadedFunction()
-            else
-                error("Failed to load script: " .. tostring(loadError))
-            end
-        else
+        
+        if not response or #response == 0 then
             error("Empty response from server")
         end
+        
+        print("Script downloaded successfully, length:", #response)
+        
+        -- Execute the loaded script
+        local loadedFunction, loadError = loadstring(response)
+        
+        if not loadedFunction then
+            error("Failed to compile script: " .. tostring(loadError))
+        end
+        
+        print("Script compiled successfully, executing...")
+        return loadedFunction()
     end)
     
     if not success then
         warn("Failed to load main script: " .. tostring(result))
-        -- Show error UI
+        
+        -- Show detailed error UI
         local errorGui = Instance.new("ScreenGui")
         errorGui.Name = "ErrorGui"
         errorGui.Parent = playerGui
         
         local errorFrame = Instance.new("Frame")
-        errorFrame.Size = UDim2.new(0, 300, 0, 100)
-        errorFrame.Position = UDim2.new(0.5, -150, 0.5, -50)
+        errorFrame.Size = UDim2.new(0, 400, 0, 150)
+        errorFrame.Position = UDim2.new(0.5, -200, 0.5, -75)
         errorFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
         errorFrame.Parent = errorGui
         
@@ -139,34 +149,69 @@ local function loadMainScript()
         errorCorner.CornerRadius = UDim.new(0, 12)
         errorCorner.Parent = errorFrame
         
+        local errorTitle = Instance.new("TextLabel")
+        errorTitle.Size = UDim2.new(1, -20, 0, 30)
+        errorTitle.Position = UDim2.new(0, 10, 0, 10)
+        errorTitle.BackgroundTransparency = 1
+        errorTitle.Font = Enum.Font.GothamBold
+        errorTitle.Text = "Failed to Load Script"
+        errorTitle.TextColor3 = Color3.fromRGB(255, 100, 100)
+        errorTitle.TextSize = 18
+        errorTitle.Parent = errorFrame
+        
         local errorText = Instance.new("TextLabel")
-        errorText.Size = UDim2.new(1, -20, 1, 0)
-        errorText.Position = UDim2.new(0, 10, 0, 0)
+        errorText.Size = UDim2.new(1, -20, 0, 60)
+        errorText.Position = UDim2.new(0, 10, 0, 45)
         errorText.BackgroundTransparency = 1
-        errorText.Font = Enum.Font.GothamBold
-        errorText.Text = "Failed to load main script!\nCheck your internet connection."
-        errorText.TextColor3 = Color3.fromRGB(255, 100, 100)
-        errorText.TextSize = 14
+        errorText.Font = Enum.Font.Gotham
+        errorText.Text = tostring(result)
+        errorText.TextColor3 = Color3.fromRGB(255, 255, 255)
+        errorText.TextSize = 12
         errorText.TextWrapped = true
         errorText.Parent = errorFrame
         
-        task.delay(3, function()
+        local retryBtn = Instance.new("TextButton")
+        retryBtn.Size = UDim2.new(0, 100, 0, 35)
+        retryBtn.Position = UDim2.new(0.5, -50, 1, -45)
+        retryBtn.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+        retryBtn.Font = Enum.Font.GothamBold
+        retryBtn.Text = "Retry"
+        retryBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        retryBtn.TextSize = 14
+        retryBtn.Parent = errorFrame
+        
+        local retryCorner = Instance.new("UICorner")
+        retryCorner.CornerRadius = UDim.new(0, 8)
+        retryCorner.Parent = retryBtn
+        
+        retryBtn.MouseButton1Click:Connect(function()
             errorGui:Destroy()
+            loadMainScript()
         end)
+        
+        return false
     end
     
-    return success
+    print("Main script loaded and executed successfully!")
+    return true
 end
 
 -- Check for saved key on startup
 local savedKey = loadSavedKey()
 if savedKey then
-    print("Key found! Loading main script...")
-    loadMainScript()
-    return -- Exit key system script
+    print("Saved key found:", savedKey)
+    print("Loading main script...")
+    local loaded = loadMainScript()
+    if loaded then
+        return -- Exit key system script only if successful
+    else
+        print("Key system will show due to load failure")
+    end
+else
+    print("No saved key found, showing key system")
 end
 
--- If no saved key, show key system UI
+-- If no saved key or load failed, show key system UI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "NexusKeySystem"
 screenGui.ResetOnSpawn = false
@@ -442,7 +487,6 @@ textFree.Text = "100% Free"
 textFree.TextColor3 = CONFIG.COLORS.Success
 textFree.TextSize = 14
 textFree.LayoutOrder = 2
-textFree.ZIndex = 5
 textFree.Parent = footerContainer
 
 local text2 = Instance.new("TextLabel")
@@ -455,7 +499,6 @@ text2.Text = "in the"
 text2.TextColor3 = CONFIG.COLORS.White
 text2.TextSize = 14
 text2.LayoutOrder = 3
-text2.ZIndex = 5
 text2.Parent = footerContainer
 
 local textDiscord = Instance.new("TextLabel")
@@ -468,7 +511,6 @@ textDiscord.Text = "Discord"
 textDiscord.TextColor3 = CONFIG.COLORS.Accent
 textDiscord.TextSize = 14
 textDiscord.LayoutOrder = 4
-textDiscord.ZIndex = 5
 textDiscord.Parent = footerContainer
 
 -- Animations
@@ -529,7 +571,7 @@ closeButton.MouseEnter:Connect(function()
 end)
 
 closeButton.MouseLeave:Connect(function()
-    TweenService:Create(closeButton, TWEEN_INFO.Hover, {
+    TweenService:Create(closeButton, Tween_INFO.Hover, {
         TextColor3 = CONFIG.COLORS.CloseButton,
         TextSize = 18
     }):Play()
@@ -644,6 +686,11 @@ getKeyButton.MouseButton1Click:Connect(function()
     statusLabel.Text = "Link copied to clipboard!"
     statusLabel.TextColor3 = CONFIG.COLORS.Success
     
+    -- Try to copy to clipboard if possible
+    if setclipboard then
+        setclipboard(CONFIG.KEY_LINK)
+    end
+    
     keyInput.Text = CONFIG.KEY_LINK
     keyInput:CaptureFocus()
     keyInput:SelectAll()
@@ -673,7 +720,7 @@ verifyButton.MouseButton1Click:Connect(function()
     end
     
     local isValid = false
-    for _, validKey in ipairs(CONFIG.VALID_KEYS) do
+    for _, validKey in ipairs(VALID_KEYS) do
         if enteredKey:upper() == validKey:upper() then
             isValid = true
             break
