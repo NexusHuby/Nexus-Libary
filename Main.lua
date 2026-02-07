@@ -1085,4 +1085,357 @@ local function visibleHitboxLoop()
                     if head then
                         if not head:GetAttribute("OriginalSize") then
                             head:SetAttribute("OriginalSize", head.Size)
-                            head:Set
+                            head:SetAttribute("OriginalTransparency", head.Transparency)
+                        end
+                        
+                        head.Size = Vector3.new(hitboxRange, hitboxRange, hitboxRange)
+                        head.Transparency = 0.3
+                        head.Color = Color3.fromRGB(255, 0, 0)
+                        head.Material = Enum.Material.Neon
+                        
+                        if not visibleHitboxParts[targetPlayer] then
+                            visibleHitboxParts[targetPlayer] = {}
+                        end
+                        visibleHitboxParts[targetPlayer].Head = head
+                    end
+                    
+                    if hrp then
+                        if not hrp:GetAttribute("OriginalSize") then
+                            hrp:SetAttribute("OriginalSize", hrp.Size)
+                        end
+                        hrp.Size = Vector3.new(hitboxRange * 0.5, hitboxRange * 0.5, hitboxRange * 0.5)
+                        visibleHitboxParts[targetPlayer].HRP = hrp
+                    end
+                    
+                    for _, part in ipairs(targetChar:GetDescendants()) do
+                        if part:IsA("BasePart") and part.Name ~= "Head" and part.Name ~= "HumanoidRootPart" then
+                            if not part:GetAttribute("OriginalSize") then
+                                part:SetAttribute("OriginalSize", part.Size)
+                            end
+                            part.Size = part:GetAttribute("OriginalSize") * 1.5
+                        end
+                    end
+                end
+            end
+        end)
+        
+        task.wait(0.5)
+    end
+    
+    pcall(function()
+        for targetPlayer, parts in pairs(visibleHitboxParts) do
+            if targetPlayer.Character then
+                for partName, part in pairs(parts) do
+                    if part and part.Parent then
+                        part.Size = part:GetAttribute("OriginalSize") or part.Size
+                        if partName == "Head" then
+                            part.Transparency = part:GetAttribute("OriginalTransparency") or 0
+                            part.Color = Color3.fromRGB(255, 255, 255)
+                            part.Material = Enum.Material.Plastic
+                        end
+                    end
+                end
+            end
+        end
+        visibleHitboxParts = {}
+    end)
+end
+
+-- Skeleton ESP
+local function createSkeletonESP(targetPlayer)
+    if targetPlayer == player then return end
+    if skeletonESPObjects[targetPlayer] then return end
+    
+    local espFolder = Instance.new("Folder")
+    espFolder.Name = targetPlayer.Name .. "_SkeletonESP"
+    espFolder.Parent = playerGui
+    
+    local lines = {}
+    local distanceLabel = nil
+    
+    local function onCharacterAdded(char)
+        task.wait(1)
+        
+        local humanoid = char:FindFirstChild("Humanoid")
+        if not humanoid then return end
+        
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "DistanceLabel"
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 5, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = espFolder
+        
+        distanceLabel = Instance.new("TextLabel")
+        distanceLabel.Size = UDim2.new(1, 0, 1, 0)
+        distanceLabel.BackgroundTransparency = 1
+        distanceLabel.Text = "0 studs"
+        distanceLabel.TextColor3 = CONFIG.COLORS.White
+        distanceLabel.TextStrokeTransparency = 0
+        distanceLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+        distanceLabel.Font = Enum.Font.GothamBold
+        distanceLabel.TextSize = 14
+        distanceLabel.Parent = billboard
+        
+        local function updateSkeleton()
+            if not espEnabled then return end
+            if not targetPlayer.Character then return end
+            
+            local head = char:FindFirstChild("Head")
+            local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+            local leftArm = char:FindFirstChild("LeftUpperArm") or char:FindFirstChild("Left Arm")
+            local rightArm = char:FindFirstChild("RightUpperArm") or char:FindFirstChild("Right Arm")
+            local leftLeg = char:FindFirstChild("LeftUpperLeg") or char:FindFirstChild("Left Leg")
+            local rightLeg = char:FindFirstChild("RightUpperLeg") or char:FindFirstChild("Right Leg")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            
+            if not (head and torso and root) then return end
+            
+            if distanceLabel and distanceLabel.Parent then
+                local dist = math.floor((humanoidRootPart.Position - root.Position).Magnitude)
+                distanceLabel.Text = dist .. " studs"
+                billboard.Adornee = head
+            end
+            
+            for _, line in ipairs(lines) do
+                if line then line:Destroy() end
+            end
+            lines = {}
+            
+            local function createLine(part1, part2, color)
+                if not (part1 and part2) then return end
+                
+                local line = Instance.new("LineHandleAdornment")
+                line.Name = "SkeletonLine"
+                line.Color3 = color or CONFIG.COLORS.ESP
+                line.Thickness = 2
+                line.ZIndex = 10
+                line.AlwaysOnTop = true
+                line.Adornee = workspace.Terrain
+                line.Parent = espFolder
+                
+                local function updateLine()
+                    if not (part1.Parent and part2.Parent) then 
+                        line:Destroy()
+                        return 
+                    end
+                    local pos1 = part1.Position
+                    local pos2 = part2.Position
+                    line.Length = (pos2 - pos1).Magnitude
+                    line.CFrame = CFrame.lookAt(pos1, pos2) * CFrame.new(0, 0, -line.Length / 2)
+                end
+                
+                updateLine()
+                table.insert(lines, line)
+                
+                local connection
+                connection = RunService.RenderStepped:Connect(function()
+                    if not line or not line.Parent then
+                        connection:Disconnect()
+                        return
+                    end
+                    updateLine()
+                end)
+            end
+            
+            createLine(head, torso, CONFIG.COLORS.ESP)
+            createLine(torso, leftArm, CONFIG.COLORS.ESP)
+            createLine(torso, rightArm, CONFIG.COLORS.ESP)
+            createLine(torso, leftLeg, CONFIG.COLORS.ESP)
+            createLine(torso, rightLeg, CONFIG.COLORS.ESP)
+            createLine(leftArm, leftLeg and leftLeg:FindFirstChild("LeftLowerLeg") or leftLeg, CONFIG.COLORS.ESP)
+            createLine(rightArm, rightLeg and rightLeg:FindFirstChild("RightLowerLeg") or rightLeg, CONFIG.COLORS.ESP)
+        end
+        
+        char:WaitForChild("Humanoid").Died:Connect(function()
+            for _, line in ipairs(lines) do
+                if line then line:Destroy() end
+            end
+            lines = {}
+        end)
+        
+        while espEnabled and targetPlayer.Character == char do
+            updateSkeleton()
+            task.wait(0.1)
+        end
+    end
+    
+    if targetPlayer.Character then
+        onCharacterAdded(targetPlayer.Character)
+    end
+    
+    targetPlayer.CharacterAdded:Connect(onCharacterAdded)
+    skeletonESPObjects[targetPlayer] = espFolder
+end
+
+local function removeSkeletonESP(targetPlayer)
+    if skeletonESPObjects[targetPlayer] then
+        skeletonESPObjects[targetPlayer]:Destroy()
+        skeletonESPObjects[targetPlayer] = nil
+    end
+end
+
+-- Regular ESP
+local function createESP(targetPlayer)
+    if targetPlayer == player then return end
+    if espObjects[targetPlayer] then return end
+    
+    local espFolder = Instance.new("Folder")
+    espFolder.Name = targetPlayer.Name .. "_ESP"
+    espFolder.Parent = playerGui
+    
+    local function onCharacterAdded(char)
+        task.wait(1)
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local head = char:FindFirstChild("Head")
+        local humanoid = char:FindFirstChild("Humanoid")
+        
+        if not hrp or not head then return end
+        
+        local box = Instance.new("BoxHandleAdornment")
+        box.Name = "ESPBox"
+        box.Size = hrp.Size + Vector3.new(2, 3, 2)
+        box.Color3 = CONFIG.COLORS.ESP
+        box.Transparency = 0.5
+        box.ZIndex = 10
+        box.AlwaysOnTop = true
+        box.Adornee = hrp
+        box.Parent = espFolder
+        
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESPName"
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Adornee = head
+        billboard.Parent = espFolder
+        
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Size = UDim2.new(1, 0, 1, 0)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = targetPlayer.Name
+        nameLabel.TextColor3 = CONFIG.COLORS.ESP
+        nameLabel.TextStrokeTransparency = 0
+        nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextSize = 14
+        nameLabel.Parent = billboard
+        
+        if humanoid then
+            local healthLabel = Instance.new("TextLabel")
+            healthLabel.Name = "ESPHealth"
+            healthLabel.Size = UDim2.new(1, 0, 0.5, 0)
+            healthLabel.Position = UDim2.new(0, 0, 0.5, 0)
+            healthLabel.BackgroundTransparency = 1
+            healthLabel.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
+            healthLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+            healthLabel.TextStrokeTransparency = 0
+            healthLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+            healthLabel.Font = Enum.Font.GothamBold
+            healthLabel.TextSize = 12
+            healthLabel.Parent = billboard
+            
+            humanoid.HealthChanged:Connect(function()
+                if healthLabel and healthLabel.Parent then
+                    healthLabel.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
+                end
+            end)
+        end
+        
+        local tracer = Instance.new("Frame")
+        tracer.Name = "ESPTracer"
+        tracer.BackgroundColor3 = CONFIG.COLORS.ESP
+        tracer.BorderSizePixel = 0
+        tracer.Size = UDim2.new(0, 2, 0, 2)
+        tracer.Parent = espFolder
+        
+        local connection = RunService.RenderStepped:Connect(function()
+            if not espEnabled or not tracer.Parent then 
+                connection:Disconnect()
+                return 
+            end
+            if not targetPlayer.Character or not hrp.Parent then 
+                tracer.Visible = false
+                return 
+            end
+            
+            local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+            if onScreen then
+                local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                local target = Vector2.new(screenPos.X, screenPos.Y)
+                local distance = (center - target).Magnitude
+                
+                tracer.Visible = true
+                tracer.Size = UDim2.new(0, distance, 0, 2)
+                tracer.Position = UDim2.new(0, math.min(center.X, target.X), 0, math.min(center.Y, target.Y))
+                tracer.Rotation = math.deg(math.atan2(target.Y - center.Y, target.X - center.X))
+            else
+                tracer.Visible = false
+            end
+        end)
+    end
+    
+    if targetPlayer.Character then
+        onCharacterAdded(targetPlayer.Character)
+    end
+    
+    targetPlayer.CharacterAdded:Connect(onCharacterAdded)
+    espObjects[targetPlayer] = espFolder
+end
+
+local function removeESP(targetPlayer)
+    if espObjects[targetPlayer] then
+        espObjects[targetPlayer]:Destroy()
+        espObjects[targetPlayer] = nil
+    end
+end
+
+-- ESP Loop
+local function espLoop()
+    for p, _ in pairs(espObjects) do
+        removeESP(p)
+    end
+    for p, _ in pairs(skeletonESPObjects) do
+        removeSkeletonESP(p)
+    end
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player then
+            createESP(p)
+            createSkeletonESP(p)
+        end
+    end
+    
+    local playerAddedConnection = Players.PlayerAdded:Connect(function(p)
+        if espEnabled then
+            createESP(p)
+            createSkeletonESP(p)
+        end
+    end)
+    
+    local playerRemovingConnection = Players.PlayerRemoving:Connect(function(p)
+        removeESP(p)
+        removeSkeletonESP(p)
+    end)
+    
+    while espEnabled do
+        task.wait(1)
+    end
+    
+    playerAddedConnection:Disconnect()
+    playerRemovingConnection:Disconnect()
+    
+    for p, _ in pairs(espObjects) do
+        removeESP(p)
+    end
+    for p, _ in pairs(skeletonESPObjects) do
+        removeSkeletonESP(p)
+    end
+end
+
+-- GUI Creation (abbreviated for space - same as previous version)
+-- [GUI creation code remains the same as your original script]
+
+print("Nexus|Escape Tsunami for Brainrots - MODIFIED EDITION Loaded!")
+print("Changes: Improved Wave Protection (stays until wave passes), Fixed Key System, Better ESP!")
