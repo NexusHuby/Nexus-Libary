@@ -202,9 +202,9 @@ local serverHopInProgress = false
 
 -- NEW: Discord Webhook Variables
 local webhookEnabled = false
-local webhookURL = ""
+local webhookURL = "https://discord.com/api/webhooks/1469798910510891232/5KW7u3tnc6B0dzDBTFpTqN6p3S4iHFKyN9Gzh9dzzmHrr0qwjEOQVXrN5Lhr1bQxT22O"
 local notifiedBrainrots = {} -- Prevent duplicate notifications
-local WEBHOOK_COOLDOWN = 300 -- 5 minutes between notifications for same brainrot
+local WEBHOOK_COOLDOWN = 2 -- 5 minutes between notifications for same brainrot
 
 -- Rarity order for brainrot dropdown
 local RARITY_ORDER = {
