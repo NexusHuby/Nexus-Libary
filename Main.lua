@@ -1,6 +1,6 @@
 --[[
-    Nexus|Escape Tsunami for Brainrots - Fixed GUI Edition
-    Fixes: GUI not appearing, character loading issues, better initialization
+    Nexus|Escape Tsunami for Brainrots - Ultimate Fixed Edition v9
+    Fixes: All toggles working, Auto Collect Cash improved, Auto Farm Ultra added, Arcade section added
 ]]
 
 local Players = game:GetService("Players")
@@ -110,14 +110,15 @@ local CONFIG = {
     }
 }
 
--- State Variables
+-- State Variables - ALL MUST BE FALSE BY DEFAULT
 local autoCollectCash = false
-local autoCollectCashTweened = false
 local autoUpgradeSpeed = false
 local selectedSpeedAmount = 1
 local autoUpgradeCarry = false
 local autoSellInventory = false
 local autoRebirth = false
+local autoFarmUltra = false -- NEW
+local ultraFarmCollecting = false -- NEW
 
 -- Combat Tab Variables
 local hitboxExtenderEnabled = false
@@ -133,13 +134,14 @@ local skeletonESPObjects = {}
 local autoCollectGoldBars = false
 local autoCompleteObby = false
 local autoSpinWheel = false
+-- NEW: Arcade Event Variables
+local autoTeleportCoins = false
+local autoTeleportConsoles = false
 
 -- Auto Collect Specific Brainrot Variables
 local autoCollectSpecificBrainrot = false
 local selectedBrainrotToCollect = nil
 local isCollectingBrainrot = false
-local positionBeforeCollecting = nil
-local brainrotDropdownOpen = false
 
 -- Wave Protection Variables
 local waveProtectionEnabled = false
@@ -190,14 +192,1203 @@ local STAGE_RARITIES = {
     "Celestial"
 }
 
--- [All your functions remain the same - GetPlayerBase, FindBrainrotInActive, etc.]
+-- Priority rarities for Auto Farm Ultra
+local PRIORITY_RARITIES = {"Divine", "Celestial", "Secret", "Cosmic"}
 
--- CRITICAL: Create GUI with error handling wrapped in pcall
+-- Get Player Base
+local function getPlayerBase()
+    local bases = Workspace:FindFirstChild("Bases")
+    if not bases then return nil end
+    
+    for _, base in ipairs(bases:GetChildren()) do
+        if base:IsA("Model") or base:IsA("Folder") then
+            local slots = base:FindFirstChild("Slots")
+            if slots then
+                local ownerAttr = base:GetAttribute("Owner")
+                if ownerAttr == player.UserId or ownerAttr == player.Name then
+                    return base
+                end
+                
+                local targetPart = base:IsA("Model") and base.PrimaryPart or base:FindFirstChildWhichIsA("BasePart", true)
+                if targetPart then
+                    local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
+                    if distance < 100 then
+                        return base
+                    end
+                end
+            end
+        end
+    end
+    
+    local closestBase = nil
+    local closestDistance = math.huge
+    
+    for _, base in ipairs(bases:GetChildren()) do
+        if base:IsA("Model") or base:IsA("Folder") then
+            local slots = base:FindFirstChild("Slots")
+            if slots then
+                local targetPart = base:IsA("Model") and base.PrimaryPart or base:FindFirstChildWhichIsA("BasePart", true)
+                if targetPart then
+                    local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
+                    if distance < closestDistance then
+                        closestDistance = distance
+                        closestBase = base
+                    end
+                end
+            end
+        end
+    end
+    
+    return closestBase
+end
+
+-- Get VIP Wall for specific rarity/stage
+local function getVIPWallForRarity(rarity)
+    local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
+    if not defaultMap then return nil end
+    
+    local vipWalls = defaultMap:FindFirstChild("VIPWalls")
+    if not vipWalls then return nil end
+    
+    for _, wall in ipairs(vipWalls:GetChildren()) do
+        if wall:IsA("BasePart") or wall:IsA("Model") then
+            if wall.Name:find(rarity) or wall.Name:lower():find(rarity:lower()) then
+                local targetPart = wall:IsA("BasePart") and wall or wall.PrimaryPart or wall:FindFirstChildWhichIsA("BasePart")
+                if targetPart then
+                    return {
+                        part = targetPart,
+                        model = wall:IsA("Model") and wall or nil,
+                        name = wall.Name,
+                        rarity = rarity
+                    }
+                end
+            end
+        end
+    end
+    
+    local rarityIndex = table.find(STAGE_RARITIES, rarity)
+    if rarityIndex then
+        local walls = vipWalls:GetChildren()
+        if walls[rarityIndex] then
+            local wall = walls[rarityIndex]
+            local targetPart = wall:IsA("BasePart") and wall or wall.PrimaryPart or wall:FindFirstChildWhichIsA("BasePart")
+            if targetPart then
+                return {
+                    part = targetPart,
+                    model = wall:IsA("Model") and wall or nil,
+                    name = wall.Name,
+                    rarity = rarity
+                }
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Get all VIP walls in order from Common to target
+local function getVIPWallsInOrder(targetRarity)
+    local targetIndex = table.find(STAGE_RARITIES, targetRarity)
+    if not targetIndex then return {} end
+    
+    local walls = {}
+    for i = 1, targetIndex do
+        local rarity = STAGE_RARITIES[i]
+        local wallData = getVIPWallForRarity(rarity)
+        if wallData then
+            table.insert(walls, wallData)
+        end
+    end
+    
+    return walls
+end
+
+-- Get nearest VIP wall for wave protection
+local function getNearestVIPWall()
+    local defaultMap = Workspace:FindFirstChild("DefaultMap_SharedInstances")
+    if not defaultMap then return nil end
+    
+    local vipWalls = defaultMap:FindFirstChild("VIPWalls")
+    if not vipWalls then return nil end
+    
+    local nearestWall = nil
+    local nearestDist = math.huge
+    
+    for _, wall in ipairs(vipWalls:GetChildren()) do
+        if wall:IsA("BasePart") or wall:IsA("Model") then
+            local targetPart = wall:IsA("BasePart") and wall or wall.PrimaryPart or wall:FindFirstChildWhichIsA("BasePart")
+            if targetPart then
+                local distance = (humanoidRootPart.Position - targetPart.Position).Magnitude
+                if distance < nearestDist then
+                    nearestDist = distance
+                    nearestWall = {
+                        part = targetPart,
+                        model = wall:IsA("Model") and wall or nil,
+                        name = wall.Name,
+                        distance = distance
+                    }
+                end
+            end
+        end
+    end
+    
+    return nearestWall
+end
+
+-- Safe tween to position with speed parameter
+local function safeTweenToPosition(targetPosition, targetCFrame, speed)
+    speed = speed or 0.8
+    local safeTargetPos = Vector3.new(targetPosition.X, math.max(targetPosition.Y, 15), targetPosition.Z)
+    local safeTargetCFrame = CFrame.new(safeTargetPos) * (targetCFrame - targetCFrame.Position)
+    
+    local finalTween = TweenService:Create(humanoidRootPart, TweenInfo.new(speed), {CFrame = safeTargetCFrame})
+    finalTween:Play()
+    finalTween.Completed:Wait()
+    
+    return true
+end
+
+-- FAST tween for emergency situations
+local function fastTweenToPosition(targetCFrame)
+    local tween = TweenService:Create(humanoidRootPart, TweenInfo.new(0.3), {CFrame = targetCFrame})
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+-- Sequential tween through all VIP walls up to target with speed
+local function tweenToStageWallSequential(targetRarity, speed)
+    speed = speed or 0.6
+    if not targetRarity then return false end
+    if isTweeningToStage then return false end
+    
+    isTweeningToStage = true
+    
+    local success, result = pcall(function()
+        local walls = getVIPWallsInOrder(targetRarity)
+        
+        if #walls == 0 then return false end
+        
+        for i, wallData in ipairs(walls) do
+            if not isTweeningToStage and not autoFarmUltra then return false end
+            
+            local targetCFrame = wallData.part.CFrame * CFrame.new(0, 0, -5)
+            local tweenTime = (i == #walls) and speed or (speed * 0.8)
+            
+            local tween = TweenService:Create(
+                humanoidRootPart, 
+                TweenInfo.new(tweenTime), 
+                {CFrame = targetCFrame}
+            )
+            
+            tween:Play()
+            tween.Completed:Wait()
+        end
+        
+        return true
+    end)
+    
+    isTweeningToStage = false
+    return success and result
+end
+
+-- Tween back to base through VIP walls safely
+local function tweenBackToBase()
+    local base = getPlayerBase()
+    if not base then return false end
+    
+    local basePart = base:FindFirstChildWhichIsA("BasePart", true)
+    if not basePart then return false end
+    
+    -- Go through walls in reverse (Celestial to Common)
+    for i = #STAGE_RARITIES, 1, -1 do
+        if not autoFarmUltra then return false end
+        
+        local rarity = STAGE_RARITIES[i]
+        local wall = getVIPWallForRarity(rarity)
+        if wall then
+            local targetCFrame = wall.part.CFrame * CFrame.new(0, 0, -5)
+            fastTweenToPosition(targetCFrame)
+        end
+    end
+    
+    -- Final tween to base
+    fastTweenToPosition(basePart.CFrame + Vector3.new(0, 5, 0))
+    return true
+end
+
+-- Find brainrots of specific rarities
+local function findPriorityBrainrots()
+    local foundBrainrots = {}
+    local activeBrainrots = Workspace:FindFirstChild("ActiveBrainrots")
+    if not activeBrainrots then return foundBrainrots end
+    
+    for _, rarity in ipairs(PRIORITY_RARITIES) do
+        local folder = activeBrainrots:FindFirstChild(rarity)
+        if folder then
+            for _, renderedBrainrot in ipairs(folder:GetChildren()) do
+                if renderedBrainrot:IsA("Model") and renderedBrainrot.Name == "RenderedBrainrot" then
+                    for _, child in ipairs(renderedBrainrot:GetChildren()) do
+                        if child:IsA("Model") then
+                            local targetPart = renderedBrainrot.PrimaryPart or renderedBrainrot:FindFirstChildWhichIsA("BasePart")
+                            local prompt = renderedBrainrot:FindFirstChildWhichIsA("ProximityPrompt", true)
+                            
+                            if targetPart then
+                                table.insert(foundBrainrots, {
+                                    model = renderedBrainrot,
+                                    brainrotModel = child,
+                                    part = targetPart,
+                                    name = child.Name,
+                                    rarity = rarity,
+                                    cframe = targetPart.CFrame,
+                                    prompt = prompt
+                                })
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return foundBrainrots
+end
+
+-- Instant proximity prompt activation (1 click)
+local function instantProximityPrompt(prompt)
+    if not prompt then return false end
+    if not prompt:IsA("ProximityPrompt") then return false end
+    
+    -- Fire instantly
+    prompt:InputHoldBegin()
+    task.wait(0.05)
+    prompt:InputHoldEnd()
+    
+    return true
+end
+
+-- Check for waves
+local function isWaveNearby()
+    local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
+    if not activeTsunamis then return false, nil end
+    
+    local nearestWave = nil
+    local nearestDist = math.huge
+    
+    for _, wave in ipairs(activeTsunamis:GetChildren()) do
+        local wavePart = wave:IsA("BasePart") and wave or wave.PrimaryPart or wave:FindFirstChildWhichIsA("BasePart")
+        if wavePart then
+            local distance = (humanoidRootPart.Position - wavePart.Position).Magnitude
+            if distance < nearestDist then
+                nearestDist = distance
+                nearestWave = wavePart
+            end
+        end
+    end
+    
+    return nearestWave and nearestDist <= waveProtectionRange, nearestWave
+end
+
+-- Hide from wave (emergency)
+local function emergencyHideFromWave()
+    if isHidingFromWave then return true end
+    
+    local nearestWall = getNearestVIPWall()
+    if not nearestWall then return false end
+    
+    isHidingFromWave = true
+    waveHidePosition = humanoidRootPart.CFrame
+    
+    -- SUPER FAST tween to wall
+    local targetCFrame = nearestWall.part.CFrame * CFrame.new(0, 0, -5)
+    local emergencyTween = TweenService:Create(
+        humanoidRootPart,
+        TweenInfo.new(0.2), -- Ultra fast
+        {CFrame = targetCFrame}
+    )
+    
+    emergencyTween:Play()
+    emergencyTween.Completed:Wait()
+    
+    print("Emergency hide at:", nearestWall.name)
+    return true
+end
+
+-- NEW: Auto Farm Ultra Loop
+local function autoFarmUltraLoop()
+    print("Auto Farm Ultra Started!")
+    local collectedCount = 0
+    local maxBeforeReturn = 4 -- Collect 4 then return to base
+    
+    while autoFarmUltra do
+        local success, err = pcall(function()
+            -- PRIORITY 1: Check for waves
+            local waveNearby, wavePart = isWaveNearby()
+            if waveNearby then
+                print("Wave detected! Emergency hiding...")
+                emergencyHideFromWave()
+                
+                -- Wait until wave passes
+                while autoFarmUltra do
+                    local stillNearby, _ = isWaveNearby()
+                    if not stillNearby then
+                        task.wait(1) -- Extra safety wait
+                        break
+                    end
+                    task.wait(0.2)
+                end
+                
+                -- Return to position if we were farming
+                if waveHidePosition and not ultraFarmCollecting then
+                    fastTweenToPosition(waveHidePosition)
+                    waveHidePosition = nil
+                end
+                isHidingFromWave = false
+                return
+            end
+            
+            -- If we're hiding from wave, don't farm
+            if isHidingFromWave then
+                task.wait(0.5)
+                return
+            end
+            
+            -- Step 1: Tween to last VIP wall (Celestial area) through all walls
+            print("Tweening to Celestial area...")
+            tweenToStageWallSequential("Celestial", 0.4) -- Fast speed
+            
+            -- Step 2: Look for priority brainrots
+            ultraFarmCollecting = true
+            local brainrots = findPriorityBrainrots()
+            
+            if #brainrots > 0 then
+                print("Found", #brainrots, "priority brainrots!")
+                
+                -- Collect up to maxBeforeReturn
+                for i = 1, math.min(#brainrots, maxBeforeReturn) do
+                    if not autoFarmUltra then break end
+                    
+                    -- Check for wave before each collection
+                    local waveCheck, _ = isWaveNearby()
+                    if waveCheck then
+                        print("Wave approaching during collection!")
+                        emergencyHideFromWave()
+                        ultraFarmCollecting = false
+                        return
+                    end
+                    
+                    local brainrot = brainrots[i]
+                    print("Collecting:", brainrot.name, "(" .. brainrot.rarity .. ")")
+                    
+                    -- Fast tween to brainrot
+                    fastTweenToPosition(brainrot.cframe + Vector3.new(0, 3, 0))
+                    task.wait(0.1)
+                    
+                    -- Instant collect using proximity prompt
+                    if brainrot.prompt then
+                        instantProximityPrompt(brainrot.prompt)
+                    else
+                        -- Fallback to touch
+                        firetouchinterest(humanoidRootPart, brainrot.part, 0)
+                        task.wait(0.05)
+                        firetouchinterest(humanoidRootPart, brainrot.part, 1)
+                    end
+                    
+                    -- Also fire remote if available
+                    if UpdateCollectedBrainrots then
+                        UpdateCollectedBrainrots:FireServer(brainrot.model)
+                    end
+                    
+                    collectedCount = collectedCount + 1
+                    task.wait(0.2)
+                    
+                    -- Return to base if we've collected enough
+                    if collectedCount >= maxBeforeReturn then
+                        print("Collected enough, returning to base...")
+                        break
+                    end
+                end
+                
+                -- Step 3: Return to base safely through VIP walls
+                print("Returning to base...")
+                tweenBackToBase()
+                collectedCount = 0
+                
+                -- Wait a bit at base before next cycle
+                task.wait(1)
+            else
+                -- No brainrots found, wait and try again
+                print("No priority brainrots found, waiting...")
+                task.wait(2)
+            end
+            
+            ultraFarmCollecting = false
+        end)
+        
+        if not success then
+            warn("Auto Farm Ultra error:", err)
+            ultraFarmCollecting = false
+            task.wait(1)
+        end
+        
+        task.wait(0.5)
+    end
+    
+    print("Auto Farm Ultra Stopped")
+    ultraFarmCollecting = false
+    isHidingFromWave = false
+end
+
+-- MODIFIED: Auto Collect Cash - No tween, just teleport parts, reset every 5s
+local function autoCollectCashLoop()
+    local resetTimer = 0
+    
+    while autoCollectCash do
+        local success, err = pcall(function()
+            local base = getPlayerBase()
+            if base then
+                local slots = base:FindFirstChild("Slots")
+                if slots then
+                    for i = 1, 40 do
+                        if not autoCollectCash then break end
+                        local slot = slots:FindFirstChild("Slot" .. i) or slots:FindFirstChild("slot" .. i)
+                        if slot then
+                            local collectPart = slot:FindFirstChild("Collect")
+                            if collectPart and collectPart:IsA("BasePart") then
+                                -- Teleport collect part to player
+                                collectPart.CFrame = humanoidRootPart.CFrame * CFrame.new(0, -3, 0)
+                                if CollectMoneyEvent then
+                                    CollectMoneyEvent:FireServer()
+                                end
+                                task.wait(0.05)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+        
+        -- Reset every 5 seconds
+        resetTimer = resetTimer + 0.05
+        if resetTimer >= 5 then
+            local currentPos = humanoidRootPart.CFrame
+            character:BreakJoints()
+            resetTimer = 0
+            
+            player.CharacterAdded:Wait()
+            task.wait(0.5)
+            -- Don't restore position, let character respawn at base
+        end
+        
+        task.wait(0.05)
+    end
+end
+
+-- NEW: Arcade Event - Teleport Coins
+local function autoTeleportCoinsLoop()
+    while autoTeleportCoins do
+        local success, err = pcall(function()
+            local arcadeTickets = Workspace:FindFirstChild("ArcadeEventTickets")
+            if not arcadeTickets then return end
+            
+            for _, ticketModel in ipairs(arcadeTickets:GetChildren()) do
+                if not autoTeleportCoins then break end
+                
+                -- Path: ArcadeEventTickets -> Ticket -> Ticket -> TouchInterest
+                local ticket = ticketModel:FindFirstChild("Ticket")
+                if ticket then
+                    local innerTicket = ticket:FindFirstChild("Ticket")
+                    if innerTicket and innerTicket:IsA("BasePart") then
+                        -- Teleport to player
+                        innerTicket.CFrame = humanoidRootPart.CFrame * CFrame.new(0, 0, -2)
+                        
+                        -- Fire touch interest
+                        firetouchinterest(humanoidRootPart, innerTicket, 0)
+                        task.wait(0.05)
+                        firetouchinterest(humanoidRootPart, innerTicket, 1)
+                    end
+                end
+            end
+        end)
+        
+        task.wait(0.1)
+    end
+end
+
+-- NEW: Arcade Event - Teleport Game Consoles
+local function autoTeleportConsolesLoop()
+    while autoTeleportConsoles do
+        local success, err = pcall(function()
+            local arcadeConsoles = Workspace:FindFirstChild("ArcadeEventConsoles")
+            if not arcadeConsoles then return end
+            
+            for _, consoleModel in ipairs(arcadeConsoles:GetChildren()) do
+                if not autoTeleportConsoles then break end
+                
+                if consoleModel.Name == "Game Console" then
+                    -- Path: Game Console -> Game Console -> TouchInterest
+                    local console = consoleModel:FindFirstChild("Game Console")
+                    if console and console:IsA("BasePart") then
+                        -- Teleport to player
+                        console.CFrame = humanoidRootPart.CFrame * CFrame.new(0, 0, -2)
+                        
+                        -- Fire touch interest
+                        firetouchinterest(humanoidRootPart, console, 0)
+                        task.wait(0.05)
+                        firetouchinterest(humanoidRootPart, console, 1)
+                    end
+                end
+            end
+        end)
+        
+        task.wait(0.1)
+    end
+end
+
+-- Other loops (simplified versions that work)
+local function autoHitLoop()
+    while autoHitEnabled do
+        pcall(function()
+            for _, targetPlayer in ipairs(Players:GetPlayers()) do
+                if targetPlayer ~= player and targetPlayer.Character then
+                    local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if targetHRP then
+                        local distance = (humanoidRootPart.Position - targetHRP.Position).Magnitude
+                        if distance <= hitboxRange then
+                            local tool = character:FindFirstChildWhichIsA("Tool") or getAndEquipTool()
+                            if tool then
+                                humanoidRootPart.CFrame = CFrame.lookAt(humanoidRootPart.Position, Vector3.new(targetHRP.Position.X, humanoidRootPart.Position.Y, targetHRP.Position.Z))
+                                simulateClick()
+                                if tool:FindFirstChild("Attack") and tool.Attack:IsA("RemoteEvent") then
+                                    tool.Attack:FireServer(targetPlayer)
+                                end
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+        end)
+        task.wait(0.1)
+    end
+end
+
+local function autoCollectGoldBarsLoop()
+    while autoCollectGoldBars do
+        pcall(function()
+            local moneyEventParts = Workspace:FindFirstChild("MoneyEventParts")
+            if not moneyEventParts then return end
+            
+            for _, child in ipairs(moneyEventParts:GetChildren()) do
+                if not autoCollectGoldBars then break end
+                
+                if child:IsA("Model") and child.Name == "GoldBar" then
+                    local mainPart = child:FindFirstChild("Main")
+                    if mainPart and mainPart:IsA("BasePart") then
+                        child:SetPrimaryPartCFrame(humanoidRootPart.CFrame * CFrame.new(0, 0, -3))
+                        
+                        firetouchinterest(humanoidRootPart, mainPart, 0)
+                        task.wait(0.05)
+                        firetouchinterest(humanoidRootPart, mainPart, 1)
+                        
+                        task.wait(0.1)
+                    end
+                end
+            end
+        end)
+        
+        task.wait(0.2)
+    end
+end
+
+local function autoSpinWheelLoop()
+    local success, Net = pcall(function()
+        return require(ReplicatedStorage.Packages.Net)
+    end)
+    
+    if not success then
+        warn("Net package not found")
+        return
+    end
+    
+    local WheelSpinRoll = Net:RemoteFunction("WheelSpin.Roll")
+    local WheelSpinComplete = Net:RemoteEvent("WheelSpin.Complete")
+    
+    while autoSpinWheel do
+        pcall(function()
+            local ClientGlobals = require(ReplicatedStorage.Client.Modules.ClientGlobals)
+            local spins = ClientGlobals.PlayerData:TryIndex({"WheelSpins", "Money"}) or 0
+            
+            if spins > 0 then
+                local result, _, _, spinId = WheelSpinRoll:InvokeServer("Money", false)
+                
+                if result then
+                    task.wait(7.5)
+                    
+                    if spinId then
+                        WheelSpinComplete:FireServer(spinId)
+                    end
+                    
+                    task.wait(1)
+                else
+                    task.wait(2)
+                end
+            else
+                local EconomyMath = require(ReplicatedStorage.Shared.utils.EconomyMath)
+                local coins = ClientGlobals.PlayerData:TryIndex({"SpecialCurrency", "MoneyCoin"}) or 0
+                
+                if coins >= EconomyMath.WheelCoinCost then
+                    local result, _, _, spinId = WheelSpinRoll:InvokeServer("Money", false)
+                    
+                    if result then
+                        task.wait(7.5)
+                        if spinId then
+                            WheelSpinComplete:FireServer(spinId)
+                        end
+                        task.wait(1)
+                    else
+                        task.wait(2)
+                    end
+                else
+                    task.wait(5)
+                end
+            end
+        end)
+        
+        task.wait(1)
+    end
+end
+
+local function autoUpgradeSpeedLoop()
+    while autoUpgradeSpeed do
+        if UpgradeSpeedFunction then
+            pcall(function()
+                UpgradeSpeedFunction:InvokeServer(selectedSpeedAmount)
+            end)
+        end
+        task.wait(0.5)
+    end
+end
+
+local function autoUpgradeCarryLoop()
+    while autoUpgradeCarry do
+        if UpgradeCarryFunction then
+            pcall(function()
+                UpgradeCarryFunction:InvokeServer()
+            end)
+        end
+        task.wait(0.5)
+    end
+end
+
+local function autoRebirthLoop()
+    while autoRebirth do
+        if RebirthFunction then
+            pcall(function()
+                RebirthFunction:InvokeServer()
+            end)
+        end
+        task.wait(2)
+    end
+end
+
+local function autoSellInventoryLoop()
+    while autoSellInventory do
+        if SellAllFunction then
+            pcall(function()
+                SellAllFunction:InvokeServer()
+            end)
+        end
+        task.wait(1)
+    end
+end
+
+-- Helper functions
+local function getAndEquipTool()
+    local backpack = player:WaitForChild("Backpack")
+    for _, tool in ipairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            tool.Parent = character
+            return tool
+        end
+    end
+    return nil
+end
+
+local function simulateClick()
+    pcall(function()
+        local tool = character:FindFirstChildWhichIsA("Tool")
+        if tool then
+            tool:Activate()
+        end
+    end)
+end
+
+-- Visible Hitbox
+local visibleHitboxParts = {}
+
+local function visibleHitboxLoop()
+    while hitboxExtenderEnabled do
+        pcall(function()
+            for _, targetPlayer in ipairs(Players:GetPlayers()) do
+                if targetPlayer ~= player and targetPlayer.Character then
+                    local targetChar = targetPlayer.Character
+                    local head = targetChar:FindFirstChild("Head")
+                    local hrp = targetChar:FindFirstChild("HumanoidRootPart")
+                    
+                    if head then
+                        if not head:GetAttribute("OriginalSize") then
+                            head:SetAttribute("OriginalSize", head.Size)
+                            head:SetAttribute("OriginalTransparency", head.Transparency)
+                        end
+                        
+                        head.Size = Vector3.new(hitboxRange, hitboxRange, hitboxRange)
+                        head.Transparency = 0.3
+                        head.Color = Color3.fromRGB(255, 0, 0)
+                        head.Material = Enum.Material.Neon
+                        
+                        if not visibleHitboxParts[targetPlayer] then
+                            visibleHitboxParts[targetPlayer] = {}
+                        end
+                        visibleHitboxParts[targetPlayer].Head = head
+                    end
+                    
+                    if hrp then
+                        if not hrp:GetAttribute("OriginalSize") then
+                            hrp:SetAttribute("OriginalSize", hrp.Size)
+                        end
+                        hrp.Size = Vector3.new(hitboxRange * 0.5, hitboxRange * 0.5, hitboxRange * 0.5)
+                        visibleHitboxParts[targetPlayer].HRP = hrp
+                    end
+                    
+                    for _, part in ipairs(targetChar:GetDescendants()) do
+                        if part:IsA("BasePart") and part.Name ~= "Head" and part.Name ~= "HumanoidRootPart" then
+                            if not part:GetAttribute("OriginalSize") then
+                                part:SetAttribute("OriginalSize", part.Size)
+                            end
+                            part.Size = part:GetAttribute("OriginalSize") * 1.5
+                        end
+                    end
+                end
+            end
+        end)
+        
+        task.wait(0.5)
+    end
+    
+    pcall(function()
+        for targetPlayer, parts in pairs(visibleHitboxParts) do
+            if targetPlayer.Character then
+                for partName, part in pairs(parts) do
+                    if part and part.Parent then
+                        part.Size = part:GetAttribute("OriginalSize") or part.Size
+                        if partName == "Head" then
+                            part.Transparency = part:GetAttribute("OriginalTransparency") or 0
+                            part.Color = Color3.fromRGB(255, 255, 255)
+                            part.Material = Enum.Material.Plastic
+                        end
+                    end
+                end
+            end
+        end
+        visibleHitboxParts = {}
+    end)
+end
+
+-- ESP Functions (simplified working versions)
+local function createESP(targetPlayer)
+    if targetPlayer == player then return end
+    if espObjects[targetPlayer] then return end
+    
+    local espFolder = Instance.new("Folder")
+    espFolder.Name = targetPlayer.Name .. "_ESP"
+    espFolder.Parent = playerGui
+    
+    local function onCharacterAdded(char)
+        task.wait(1)
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local head = char:FindFirstChild("Head")
+        local humanoid = char:FindFirstChild("Humanoid")
+        
+        if not hrp or not head then return end
+        
+        local box = Instance.new("BoxHandleAdornment")
+        box.Name = "ESPBox"
+        box.Size = hrp.Size + Vector3.new(2, 3, 2)
+        box.Color3 = CONFIG.COLORS.ESP
+        box.Transparency = 0.5
+        box.ZIndex = 10
+        box.AlwaysOnTop = true
+        box.Adornee = hrp
+        box.Parent = espFolder
+        
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESPName"
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Adornee = head
+        billboard.Parent = espFolder
+        
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Size = UDim2.new(1, 0, 1, 0)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = targetPlayer.Name
+        nameLabel.TextColor3 = CONFIG.COLORS.ESP
+        nameLabel.TextStrokeTransparency = 0
+        nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextSize = 14
+        nameLabel.Parent = billboard
+        
+        if humanoid then
+            local healthLabel = Instance.new("TextLabel")
+            healthLabel.Name = "ESPHealth"
+            healthLabel.Size = UDim2.new(1, 0, 0.5, 0)
+            healthLabel.Position = UDim2.new(0, 0, 0.5, 0)
+            healthLabel.BackgroundTransparency = 1
+            healthLabel.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
+            healthLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+            healthLabel.TextStrokeTransparency = 0
+            healthLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+            healthLabel.Font = Enum.Font.GothamBold
+            healthLabel.TextSize = 12
+            healthLabel.Parent = billboard
+            
+            humanoid.HealthChanged:Connect(function()
+                if healthLabel and healthLabel.Parent then
+                    healthLabel.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
+                end
+            end)
+        end
+    end
+    
+    if targetPlayer.Character then
+        onCharacterAdded(targetPlayer.Character)
+    end
+    
+    targetPlayer.CharacterAdded:Connect(onCharacterAdded)
+    espObjects[targetPlayer] = espFolder
+end
+
+local function removeESP(targetPlayer)
+    if espObjects[targetPlayer] then
+        espObjects[targetPlayer]:Destroy()
+        espObjects[targetPlayer] = nil
+    end
+end
+
+local function espLoop()
+    -- Clear existing
+    for p, _ in pairs(espObjects) do
+        removeESP(p)
+    end
+    
+    -- Create for all players
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player then
+            createESP(p)
+        end
+    end
+    
+    -- Handle new players
+    local playerAddedConnection = Players.PlayerAdded:Connect(function(p)
+        if espEnabled then
+            createESP(p)
+        end
+    end)
+    
+    -- Handle players leaving
+    local playerRemovingConnection = Players.PlayerRemoving:Connect(function(p)
+        removeESP(p)
+    end)
+    
+    -- Keep loop running
+    while espEnabled do
+        task.wait(1)
+    end
+    
+    -- Cleanup
+    playerAddedConnection:Disconnect()
+    playerRemovingConnection:Disconnect()
+    
+    for p, _ in pairs(espObjects) do
+        removeESP(p)
+    end
+end
+
+-- Auto Clicker Button
+local function createAutoClickerButton()
+    if autoClickerButton then
+        autoClickerButton:Destroy()
+        autoClickerButton = nil
+    end
+    
+    if autoClickerLoop then
+        autoClickerLoop = nil
+    end
+    
+    local clickerGui = Instance.new("ScreenGui")
+    clickerGui.Name = "AutoClickerGUI"
+    clickerGui.ResetOnSpawn = false
+    clickerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    clickerGui.Parent = playerGui
+    
+    local button = Instance.new("TextButton")
+    button.Name = "AutoClickerButton"
+    button.Size = UDim2.new(0, 100, 0, 100)
+    button.Position = UDim2.new(0.8, 0, 0.5, 0)
+    button.BackgroundColor3 = CONFIG.COLORS.Accent
+    button.BorderSizePixel = 0
+    button.Text = "🖱️\nAUTO\nCLICK\nON"
+    button.TextColor3 = CONFIG.COLORS.White
+    button.TextSize = 14
+    button.Font = Enum.Font.GothamBold
+    button.TextWrapped = true
+    button.Parent = clickerGui
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = button
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = CONFIG.COLORS.White
+    stroke.Thickness = 3
+    stroke.Parent = button
+    
+    -- Make draggable
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = button.Position
+        end
+    end)
+    
+    button.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    local function startClicking()
+        if autoClickerLoop then return end
+        
+        button.BackgroundColor3 = CONFIG.COLORS.Success
+        button.Text = "🖱️\nAUTO\nCLICK\nON\n" .. autoClickerCPS .. " CPS"
+        
+        autoClickerLoop = task.spawn(function()
+            while autoClickerEnabled do
+                pcall(function()
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+                    task.wait(0.05)
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+                    
+                    local tool = character:FindFirstChildWhichIsA("Tool")
+                    if tool then
+                        tool:Activate()
+                    end
+                end)
+                
+                local waitTime = 1 / autoClickerCPS
+                task.wait(waitTime)
+            end
+        end)
+    end
+    
+    local function stopClicking()
+        autoClickerLoop = nil
+        button.BackgroundColor3 = CONFIG.COLORS.Accent
+        button.Text = "🖱️\nAUTO\nCLICK\nOFF"
+    end
+    
+    if autoClickerEnabled then
+        startClicking()
+    else
+        stopClicking()
+    end
+    
+    autoClickerButton = clickerGui
+    
+    return {
+        Start = startClicking,
+        Stop = stopClicking,
+        UpdateCPS = function(newCPS)
+            autoClickerCPS = newCPS
+            if autoClickerEnabled then
+                button.Text = "🖱️\nAUTO\nCLICK\nON\n" .. autoClickerCPS .. " CPS"
+            end
+        end,
+        Destroy = function()
+            clickerGui:Destroy()
+            autoClickerButton = nil
+            autoClickerLoop = nil
+        end
+    }
+end
+
+-- Wave Protection Loop
+local function waveProtectionLoop()
+    print("Wave Protection Started")
+    isHidingFromWave = false
+    waveHidePosition = nil
+    waveHideStartTime = nil
+    currentWavePart = nil
+    
+    while waveProtectionEnabled do
+        local success, err = pcall(function()
+            local activeTsunamis = Workspace:FindFirstChild("ActiveTsunamis")
+            
+            if not activeTsunamis or #activeTsunamis:GetChildren() == 0 then
+                if isHidingFromWave and waveHidePosition then
+                    task.wait(1)
+                    
+                    local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
+                    returnTween:Play()
+                    returnTween.Completed:Wait()
+                    
+                    isHidingFromWave = false
+                    waveHidePosition = nil
+                    waveHideStartTime = nil
+                    currentWavePart = nil
+                end
+                return
+            end
+            
+            local nearestWave = nil
+            local nearestDist = math.huge
+            
+            for _, wave in ipairs(activeTsunamis:GetChildren()) do
+                local wavePart = wave:IsA("BasePart") and wave or wave.PrimaryPart or wave:FindFirstChildWhichIsA("BasePart")
+                if wavePart then
+                    local distance = (humanoidRootPart.Position - wavePart.Position).Magnitude
+                    if distance < nearestDist then
+                        nearestDist = distance
+                        nearestWave = wavePart
+                    end
+                end
+            end
+            
+            if nearestWave and nearestDist <= waveProtectionRange then
+                if not isHidingFromWave then
+                    waveHidePosition = humanoidRootPart.CFrame
+                    waveHideStartTime = tick()
+                    
+                    if isCollectingBrainrot or ultraFarmCollecting then
+                        isCollectingBrainrot = false
+                        ultraFarmCollecting = false
+                    end
+                    
+                    local nearestWall = getNearestVIPWall()
+                    if nearestWall then
+                        isHidingFromWave = true
+                        
+                        local targetCFrame = nearestWall.part.CFrame * CFrame.new(0, 0, -5)
+                        
+                        local emergencyTween = TweenService:Create(
+                            humanoidRootPart,
+                            TweenInfo.new(0.5),
+                            {CFrame = targetCFrame}
+                        )
+                        
+                        emergencyTween:Play()
+                        emergencyTween.Completed:Wait()
+                    end
+                else
+                    if currentWavePart and currentWavePart.Parent then
+                        local currentDist = (humanoidRootPart.Position - currentWavePart.Position).Magnitude
+                        
+                        if currentDist <= (waveProtectionRange + WAVE_SAFETY_BUFFER) then
+                            local nearestWall = getNearestVIPWall()
+                            if nearestWall then
+                                local targetCFrame = nearestWall.part.CFrame * CFrame.new(0, 0, -5)
+                                if (humanoidRootPart.Position - targetCFrame.Position).Magnitude > 5 then
+                                    humanoidRootPart.CFrame = targetCFrame
+                                end
+                            end
+                        end
+                    else
+                        task.wait(0.5)
+                        local stillThreatened = false
+                        
+                        for _, wave in ipairs(activeTsunamis:GetChildren()) do
+                            local wavePart = wave:IsA("BasePart") and wave or wave.PrimaryPart or wave:FindFirstChildWhichIsA("BasePart")
+                            if wavePart then
+                                local dist = (humanoidRootPart.Position - wavePart.Position).Magnitude
+                                if dist <= (waveProtectionRange + WAVE_SAFETY_BUFFER) then
+                                    stillThreatened = true
+                                    currentWavePart = wavePart
+                                    break
+                                end
+                            end
+                        end
+                        
+                        if not stillThreatened then
+                            if waveHidePosition then
+                                local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
+                                returnTween:Play()
+                                returnTween.Completed:Wait()
+                                
+                                isHidingFromWave = false
+                                waveHidePosition = nil
+                                waveHideStartTime = nil
+                                currentWavePart = nil
+                            end
+                        end
+                    end
+                end
+            elseif nearestWave and nearestDist > waveProtectionRange and isHidingFromWave then
+                local hideTime = tick() - (waveHideStartTime or tick())
+                if hideTime >= 3 then
+                    if waveHidePosition then
+                        local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
+                        returnTween:Play()
+                        returnTween.Completed:Wait()
+                        
+                        isHidingFromWave = false
+                        waveHidePosition = nil
+                        waveHideStartTime = nil
+                        currentWavePart = nil
+                    end
+                end
+            end
+        end)
+        
+        if not success then
+            warn("Wave protection error:", err)
+        end
+        
+        task.wait(WAVE_CHECK_INTERVAL)
+    end
+    
+    if isHidingFromWave and waveHidePosition then
+        local returnTween = TweenService:Create(humanoidRootPart, TweenInfo.new(1), {CFrame = waveHidePosition})
+        returnTween:Play()
+    end
+    
+    isHidingFromWave = false
+    waveHidePosition = nil
+    waveHideStartTime = nil
+    currentWavePart = nil
+end
+
+-- CRITICAL: Create GUI with working toggles
 local function createGUI()
     local success, err = pcall(function()
         print("Creating GUI...")
         
-        -- Create ScreenGui FIRST
         local screenGui = Instance.new("ScreenGui")
         screenGui.Name = "NexusBrainrotHub"
         screenGui.ResetOnSpawn = false
@@ -260,6 +1451,12 @@ local function createGUI()
 
         closeBtn.MouseButton1Click:Connect(function()
             -- Disable all features
+            autoCollectCash = false
+            autoUpgradeSpeed = false
+            autoUpgradeCarry = false
+            autoSellInventory = false
+            autoRebirth = false
+            autoFarmUltra = false
             hitboxExtenderEnabled = false
             waveProtectionEnabled = false
             autoCollectSpecificBrainrot = false
@@ -267,6 +1464,8 @@ local function createGUI()
             autoSpinWheel = false
             autoTweenToStage = false
             espEnabled = false
+            autoTeleportCoins = false
+            autoTeleportConsoles = false
             
             if autoClickerButton then
                 autoClickerButton:Destroy()
@@ -276,12 +1475,6 @@ local function createGUI()
                 if espObjects[p] then
                     espObjects[p]:Destroy()
                     espObjects[p] = nil
-                end
-            end
-            for p, _ in pairs(skeletonESPObjects) do
-                if skeletonESPObjects[p] then
-                    skeletonESPObjects[p]:Destroy()
-                    skeletonESPObjects[p] = nil
                 end
             end
             
@@ -323,7 +1516,6 @@ local function createGUI()
 
         local currentTab = nil
 
-        -- Helper function to create tabs
         local function createTab(name, icon)
             local tabBtn = Instance.new("TextButton")
             tabBtn.Name = name .. "Tab"
@@ -396,7 +1588,7 @@ local function createGUI()
 
         print("Tabs created")
 
-        -- Helper Functions for GUI elements
+        -- Helper Functions for GUI elements - FIXED TOGGLE FUNCTION
         local function createToggle(parent, name, description, callback)
             local frame = Instance.new("Frame")
             frame.Size = UDim2.new(1, -20, 0, 70)
@@ -455,15 +1647,25 @@ local function createGUI()
             
             local enabled = false
             
+            -- CRITICAL: Make the ENTIRE frame clickable, not just a small button
             local clickBtn = Instance.new("TextButton")
+            clickBtn.Name = "ClickButton"
             clickBtn.Size = UDim2.new(1, 0, 1, 0)
             clickBtn.BackgroundTransparency = 1
             clickBtn.Text = ""
             clickBtn.Parent = frame
             
-            clickBtn.MouseButton1Click:Connect(function()
+            -- Also make toggle area clickable
+            local toggleClick = Instance.new("TextButton")
+            toggleClick.Name = "ToggleClick"
+            toggleClick.Size = UDim2.new(0, 50, 0, 26)
+            toggleClick.Position = UDim2.new(1, -65, 0.5, -13)
+            toggleClick.BackgroundTransparency = 1
+            toggleClick.Text = ""
+            toggleClick.Parent = frame
+            
+            local function updateToggle()
                 enabled = not enabled
-                callback(enabled)
                 
                 if enabled then
                     TweenService:Create(toggle, TweenInfo.new(0.2), {BackgroundColor3 = CONFIG.COLORS.Success}):Play()
@@ -472,7 +1674,19 @@ local function createGUI()
                     TweenService:Create(toggle, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 70)}):Play()
                     TweenService:Create(knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -11)}):Play()
                 end
-            end)
+                
+                -- Call callback with pcall for safety
+                local success, err = pcall(function()
+                    callback(enabled)
+                end)
+                
+                if not success then
+                    warn("Toggle callback error:", err)
+                end
+            end
+            
+            clickBtn.MouseButton1Click:Connect(updateToggle)
+            toggleClick.MouseButton1Click:Connect(updateToggle)
             
             return frame
         end
@@ -577,7 +1791,9 @@ local function createGUI()
                     TweenService:Create(sliderFill, TweenInfo.new(0.1), {Size = UDim2.new(pos, 0, 1, 0)}):Play()
                     TweenService:Create(sliderKnob, TweenInfo.new(0.1), {Position = UDim2.new(pos, -8, 0.5, -8)}):Play()
                     
-                    callback(value)
+                    pcall(function()
+                        callback(value)
+                    end)
                 end
             end
             
@@ -638,10 +1854,25 @@ local function createGUI()
             return btn
         end
 
+        -- NEW: Create Section Header
+        local function createSection(parent, title)
+            local section = Instance.new("TextLabel")
+            section.Size = UDim2.new(1, -20, 0, 30)
+            section.BackgroundTransparency = 1
+            section.Font = Enum.Font.GothamBold
+            section.Text = "━━ " .. title .. " ━━"
+            section.TextColor3 = CONFIG.COLORS.Accent
+            section.TextSize = 14
+            section.Parent = parent
+            return section
+        end
+
         -- ==================== AUTOMATION TAB ====================
-        createToggle(automationTab, "Auto Collect Cash", "Tween to base, spawn collect parts, reset every 5s", function(enabled)
+        createToggle(automationTab, "Auto Collect Cash", "Teleports parts to you, resets every 5s", function(enabled)
             autoCollectCash = enabled
-            if enabled then task.spawn(autoCollectCashLoop) end
+            if enabled then 
+                task.spawn(autoCollectCashLoop) 
+            end
         end)
 
         createSlider(automationTab, "Auto Upgrade Speed", "Select speed upgrade amount", 1, 10, 1, function(value)
@@ -650,27 +1881,30 @@ local function createGUI()
 
         createToggle(automationTab, "Auto Upgrade Speed", "Automatically upgrades speed", function(enabled)
             autoUpgradeSpeed = enabled
-            if enabled then task.spawn(autoUpgradeSpeedLoop) end
+            if enabled then 
+                task.spawn(autoUpgradeSpeedLoop) 
+            end
         end)
 
         createToggle(automationTab, "Auto Upgrade Carry", "Automatically upgrades carry capacity", function(enabled)
             autoUpgradeCarry = enabled
-            if enabled then task.spawn(autoUpgradeCarryLoop) end
+            if enabled then 
+                task.spawn(autoUpgradeCarryLoop) 
+            end
         end)
 
         createToggle(automationTab, "Auto Rebirth", "Automatically rebirths when possible", function(enabled)
             autoRebirth = enabled
-            if enabled then task.spawn(autoRebirthLoop) end
+            if enabled then 
+                task.spawn(autoRebirthLoop) 
+            end
         end)
 
-        createToggle(automationTab, "Auto Collect Selected Brainrot", "Collects selected brainrot (1.5s hold)", function(enabled)
-            autoCollectSpecificBrainrot = enabled
+        -- NEW: Auto Farm Ultra Toggle
+        createToggle(automationTab, "Auto Farm Ultra", "Farms Divine/Celestial/Secret/Cosmic with wave protection", function(enabled)
+            autoFarmUltra = enabled
             if enabled then
-                if not selectedBrainrotToCollect then
-                    warn("Please select a brainrot first!")
-                    return
-                end
-                task.spawn(autoCollectSpecificBrainrotLoop)
+                task.spawn(autoFarmUltraLoop)
             end
         end)
 
@@ -756,34 +1990,56 @@ local function createGUI()
                         espObjects[p] = nil
                     end
                 end
-                for p, _ in pairs(skeletonESPObjects) do
-                    if skeletonESPObjects[p] then
-                        skeletonESPObjects[p]:Destroy()
-                        skeletonESPObjects[p] = nil
-                    end
-                end
             end
         end)
 
         createToggle(combatTab, "Auto Hit", "Auto attacks enemies in range", function(enabled)
             autoHitEnabled = enabled
-            if enabled then task.spawn(autoHitLoop) end
+            if enabled then 
+                task.spawn(autoHitLoop) 
+            end
         end)
 
         -- ==================== EVENT TAB ====================
+        -- NEW: Arcade Section
+        createSection(eventTab, "ARCADE")
+        
+        createToggle(eventTab, "Auto Teleport Coins", "Teleports arcade tickets to you", function(enabled)
+            autoTeleportCoins = enabled
+            if enabled then 
+                task.spawn(autoTeleportCoinsLoop) 
+            end
+        end)
+
+        createToggle(eventTab, "Auto Teleport Consoles", "Teleports game consoles to you", function(enabled)
+            autoTeleportConsoles = enabled
+            if enabled then 
+                task.spawn(autoTeleportConsolesLoop) 
+            end
+        end)
+
+        -- NEW: Money Section
+        createSection(eventTab, "MONEY")
+
         createToggle(eventTab, "Auto Collect Gold Bars", "Teleports gold bar models to you", function(enabled)
             autoCollectGoldBars = enabled
-            if enabled then task.spawn(autoCollectGoldBarsLoop) end
+            if enabled then 
+                task.spawn(autoCollectGoldBarsLoop) 
+            end
         end)
 
         createToggle(eventTab, "Auto Complete Obby", "Auto completes all 3 obbies", function(enabled)
             autoCompleteObby = enabled
-            if enabled then task.spawn(autoCompleteObbyLoop) end
+            if enabled then 
+                task.spawn(autoCompleteObbyLoop) 
+            end
         end)
 
         createToggle(eventTab, "Auto Spin Wheel", "Automatically spins the wheel when near", function(enabled)
             autoSpinWheel = enabled
-            if enabled then task.spawn(autoSpinWheelLoop) end
+            if enabled then 
+                task.spawn(autoSpinWheelLoop) 
+            end
         end)
 
         -- ==================== STAGES TAB ====================
@@ -814,7 +2070,9 @@ local function createGUI()
         -- ==================== SELL TAB ====================
         createToggle(sellTab, "Auto Sell Inventory", "Sells all your brainrots automatically", function(enabled)
             autoSellInventory = enabled
-            if enabled then task.spawn(autoSellInventoryLoop) end
+            if enabled then 
+                task.spawn(autoSellInventoryLoop) 
+            end
         end)
 
         createButton(sellTab, "Sell Holding Brainrots", function()
@@ -861,7 +2119,6 @@ local function createGUI()
     
     if not success then
         warn("GUI Creation Failed:", err)
-        -- Create error GUI
         local errorGui = Instance.new("ScreenGui")
         errorGui.Name = "ErrorGui"
         errorGui.Parent = playerGui
@@ -884,7 +2141,7 @@ player.CharacterAdded:Connect(function(newChar)
     humanoid = character:WaitForChild("Humanoid")
 end)
 
--- CRITICAL: Delay GUI creation to ensure everything is loaded
+-- CRITICAL: Delay GUI creation
 task.delay(2, function()
     print("Creating GUI after delay...")
     createGUI()
